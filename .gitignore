@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Turbo
+.turbo/
+
+# Docker volumes
+infrastructure/data/
+
+# MinIO data
+minio_data/
+
+# Testing
+coverage/
+htmlcov/
+.pytest_cache/
+
+# Build
+*.tsbuildinfo

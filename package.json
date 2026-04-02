@@ -1,0 +1,17 @@
+{
+  "name": "parsegrid",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:web": "turbo dev --filter=@parsegrid/web",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
+    "dev:worker": "cd apps/api && uv run celery -A app.worker.celery_app worker --loglevel=info",
+    "dev:infra": "docker compose -f infrastructure/docker-compose.yml up -d"
+  },
+  "devDependencies": {
+    "turbo": "^2"
+  },
+  "packageManager": "pnpm@10.17.1"
+}
