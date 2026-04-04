@@ -145,17 +145,33 @@ Return the JSON schema that best captures the structured data in this document."
 
         Uses gpt-4o-mini for cost efficiency on locked schemas.
         """
-        system_prompt = f"""You are a data extraction agent for ParseGrid.
-Extract ALL structured data from the given text according to this schema:
+        # Build a clear field list from the schema for the prompt
+        items_schema = schema.get("properties", {}).get("items", {})
+        item_props = items_schema.get("items", {}).get("properties", {})
+        if not item_props:
+            # Flat schema fallback
+            item_props = schema.get("properties", {})
 
-{json.dumps(schema, indent=2)}
+        field_descriptions = []
+        for fname, fdef in item_props.items():
+            ftype = fdef.get("type", "string")
+            fdesc = fdef.get("description", "")
+            field_descriptions.append(f'  - "{fname}" ({ftype}): {fdesc}')
+        fields_text = "\n".join(field_descriptions)
+
+        system_prompt = f"""You are a data extraction agent. Extract structured records from text.
+
+Each record must have these fields:
+{fields_text}
+
+Return a JSON object with a single key "items" containing an array of extracted records.
+Example output format:
+{{"items": [{{"field1": "value1", "field2": 123}}, ...]}}
 
 Rules:
 1. Extract EVERY matching record found in the text.
-2. Follow the schema exactly — do not add or omit fields.
-3. If a field value is not found, use null.
-4. Maintain the exact data types specified in the schema.
-5. Return the data as a JSON object matching the schema structure."""
+2. If a field value is not found in the text, use null.
+3. Return ONLY the JSON object with "items" array — nothing else."""
 
         response = self.client.chat.completions.create(
             model=self.extraction_model,
@@ -194,13 +210,15 @@ Rules:
         Uses gpt-4o-mini for SQL/Cypher generation.
         """
         format_instructions = {
-            "SQL": """Generate PostgreSQL DDL (CREATE TABLE statements) from this JSON schema.
+            "SQL": """Generate a single PostgreSQL CREATE TABLE statement from this JSON schema.
 Rules:
-- Use appropriate PostgreSQL types (TEXT, INTEGER, NUMERIC, BOOLEAN, TIMESTAMP, JSONB).
-- Add a SERIAL PRIMARY KEY column named 'id' to each table.
+- Create exactly ONE flat table — no parent tables, no foreign keys, no joins.
+- The table should hold the items array directly. Each item becomes a row.
+- Add a SERIAL PRIMARY KEY column named 'id'.
+- Use appropriate PostgreSQL types (TEXT, INTEGER, NUMERIC, BOOLEAN, TIMESTAMP).
 - Use snake_case for column names.
-- Include NOT NULL constraints for required fields.
-- Return ONLY the SQL statements, no explanation.""",
+- Use NULL defaults for all columns except id.
+- Return ONLY the CREATE TABLE statement, no explanation, no markdown fences.""",
             "GRAPH": """Generate Neo4j Cypher statements to create nodes and relationships from this JSON schema.
 Rules:
 - Create nodes with properties matching the schema fields.

@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ============================================================================
 # OCR Provider Interface
 # ============================================================================
@@ -157,5 +156,65 @@ class BaseLLMProvider(ABC):
 
         Returns:
             DDL string (SQL CREATE TABLE, Cypher CREATE, etc.)
+        """
+        ...
+
+
+# ============================================================================
+# Output Provider Interface
+# ============================================================================
+
+
+@dataclass
+class ProvisionResult:
+    """Result of a provisioning operation."""
+
+    connection_string: str
+    rows_inserted: int
+    schema_name: str
+    ddl_executed: str
+
+
+class BaseOutputProvider(ABC):
+    """Abstract interface for output database providers.
+
+    Implementations:
+    - PostgresOutputProvider (default, SQL)
+    - Future: Neo4jOutputProvider (GRAPH), VectorOutputProvider (VECTOR)
+    """
+
+    @abstractmethod
+    def test_connection(self, connection_string: str) -> bool:
+        """Test whether a connection string is valid and reachable.
+
+        Args:
+            connection_string: Database connection string to test.
+
+        Returns:
+            True if connection succeeds.
+
+        Raises:
+            Exception with details if connection fails.
+        """
+        ...
+
+    @abstractmethod
+    def provision(
+        self,
+        schema_name: str,
+        ddl: str,
+        data: dict | list,
+        json_schema: dict,
+    ) -> ProvisionResult:
+        """Create schema, execute DDL, and bulk insert data.
+
+        Args:
+            schema_name: Isolated schema/namespace name (e.g., job_{uuid}).
+            ddl: DDL statements to execute.
+            data: The merged extraction data.
+            json_schema: The locked JSON schema (for table name inference).
+
+        Returns:
+            ProvisionResult with connection string, row count, etc.
         """
         ...

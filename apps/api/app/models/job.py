@@ -4,8 +4,9 @@ Represents an extraction job lifecycle from upload to completion.
 """
 
 import enum
+from datetime import datetime
 
-from sqlalchemy import Enum, Float, Integer, String, Text
+from sqlalchemy import DateTime, Enum, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -116,6 +117,21 @@ class Job(Base, TimestampMixin):
         Integer,
         nullable=True,
         comment="Total pages detected by OCR",
+    )
+    provisioned_rows: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Number of rows inserted into target database",
+    )
+    provisioned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp when provisioning completed",
+    )
+    target_ddl: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Generated DDL stored for audit trail",
     )
 
     def __repr__(self) -> str:
