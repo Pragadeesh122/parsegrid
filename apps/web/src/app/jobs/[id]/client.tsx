@@ -1,14 +1,20 @@
 /**
  * ParseGrid — Job detail client component with real-time SSE status.
+ *
+ * Uses the SSE hook for live progress updates (cookie-based auth via
+ * the Next.js rewrite proxy). Falls back to a full job re-fetch on
+ * terminal status to pick up fields SSE doesn't carry (connection_string, etc.).
  */
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ProgressBar } from "@/components/job-status/progress-bar";
 import { SchemaForm } from "@/components/schema-editor/schema-form";
 import { ConnectionString } from "@/components/connection/conn-string";
+import { DataPreview } from "@/components/data-preview/data-table";
+import { useSSE } from "@/hooks/use-sse";
 import type { Job } from "@/lib/api-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -23,8 +29,9 @@ export default function JobDetailClient({
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch job details
+  // --- Initial fetch ---
   useEffect(() => {
     const fetchJob = async () => {
       try {
@@ -41,43 +48,60 @@ export default function JobDetailClient({
       }
     };
     fetchJob();
-  }, [jobId]);
+  }, [jobId, token]);
 
-  // Poll for updates when job is in a processing state
-  useEffect(() => {
-    if (
-      !job ||
-      job.status === "COMPLETED" ||
-      job.status === "FAILED" ||
-      job.status === "SCHEMA_PROPOSED" ||
-      job.status === "AWAITING_REVIEW"
-    ) {
-      return;
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok) {
-          const statusData = await res.json();
-          setJob((prev) =>
-            prev ? { ...prev, ...statusData } : prev,
-          );
-        }
-      } catch {
-        // Silently retry
+  // --- Full re-fetch (used after SSE terminal event or mutations) ---
+  const refetchJob = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJob(data);
       }
-    }, 2000);
+    } catch {
+      // Silently retry on next opportunity
+    }
+  }, [jobId, token]);
 
-    return () => clearInterval(interval);
-  }, [job?.status, jobId]);
+  // --- SSE for live progress ---
+  const isProcessing =
+    !!job &&
+    job.status !== "COMPLETED" &&
+    job.status !== "FAILED" &&
+    job.status !== "SCHEMA_PROPOSED" &&
+    job.status !== "AWAITING_REVIEW";
 
-  // Schema approval handler
+  useSSE({
+    jobId,
+    enabled: isProcessing,
+    onStatus: (data) => {
+      // Merge SSE status into local job state
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: data.status,
+              progress: data.progress,
+              error_message: data.error_message ?? prev.error_message,
+              connection_string: data.connection_string ?? prev.connection_string,
+            }
+          : prev,
+      );
+
+      // On terminal status, re-fetch the full job to get all fields
+      if (data.status === "COMPLETED" || data.status === "FAILED") {
+        refetchJob();
+      }
+    },
+  });
+
+  // --- Schema approval ---
   const handleApproveSchema = async (
     editedSchema: Record<string, unknown>,
   ) => {
+    setIsSubmitting(true);
     try {
       const res = await fetch(
         `${API_BASE}/api/v1/jobs/${jobId}/approve-schema`,
@@ -95,8 +119,36 @@ export default function JobDetailClient({
       setJob(updatedJob);
     } catch (e) {
       console.error("Schema approval failed:", e);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  // --- Schema rejection ---
+  const handleRejectSchema = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/v1/jobs/${jobId}/reject-schema`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
+      if (!res.ok) throw new Error("Schema rejection failed");
+      const updatedJob = await res.json();
+      setJob(updatedJob);
+    } catch (e) {
+      console.error("Schema rejection failed:", e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Render states ---
 
   if (loading) {
     return (
@@ -114,7 +166,7 @@ export default function JobDetailClient({
           href="/dashboard"
           className="text-sm text-indigo-400 hover:text-indigo-300"
         >
-          ← Back to Dashboard
+          &larr; Back to Dashboard
         </Link>
       </div>
     );
@@ -129,7 +181,7 @@ export default function JobDetailClient({
             href="/dashboard"
             className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            ← Dashboard
+            &larr; Dashboard
           </Link>
           <h1 className="mt-2 text-2xl font-bold text-zinc-100">
             {job.filename}
@@ -155,13 +207,24 @@ export default function JobDetailClient({
             <SchemaForm
               proposedSchema={job.proposed_schema}
               onApprove={handleApproveSchema}
+              onReject={handleRejectSchema}
+              isSubmitting={isSubmitting}
             />
           </div>
         )}
 
       {/* Connection String (shows when completed) */}
       {job.status === "COMPLETED" && job.connection_string && (
-        <ConnectionString connectionString={job.connection_string} />
+        <ConnectionString
+          connectionString={job.connection_string}
+          provisionedRows={job.provisioned_rows}
+          provisionedAt={job.provisioned_at}
+        />
+      )}
+
+      {/* Data Preview (shows when completed) */}
+      {job.status === "COMPLETED" && token && (
+        <DataPreview jobId={job.id} token={token} />
       )}
 
       {/* Job Metadata */}

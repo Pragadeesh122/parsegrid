@@ -10,6 +10,7 @@ from app.api.deps import get_current_user, get_db_session
 from app.core.security import TokenPayload
 from app.models.job import Job, JobStatus
 from app.schemas.job import (
+    DataPreviewResponse,
     JobCreateRequest,
     JobListResponse,
     JobResponse,
@@ -155,3 +156,98 @@ async def approve_schema(
     run_extraction.apply_async(args=[job.id])
 
     return job
+
+
+@router.post(
+    "/{job_id}/reject-schema",
+    response_model=JobResponse,
+    summary="Reject the proposed schema and re-trigger OCR",
+)
+async def reject_schema(
+    job_id: str,
+    user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Job:
+    """Reject the AI-proposed schema, reset the job, and re-run OCR + schema discovery."""
+    query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status not in (JobStatus.SCHEMA_PROPOSED, JobStatus.AWAITING_REVIEW):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reject schema in status {job.status}",
+        )
+
+    job.proposed_schema = None
+    job.status = JobStatus.UPLOADED
+    job.progress = 0.0
+    await db.commit()
+    await db.refresh(job)
+
+    # Re-enqueue OCR processing
+    from app.worker.tasks.ocr import process_document
+
+    process_document.apply_async(args=[job.id])
+
+    return job
+
+
+@router.get(
+    "/{job_id}/data-preview",
+    response_model=DataPreviewResponse,
+    summary="Get a paginated preview of extracted data",
+)
+async def get_data_preview(
+    job_id: str,
+    user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return the first 20 records from extracted_data plus the total count.
+
+    The full extracted_data payload can be very large, so this endpoint
+    provides a lightweight preview for the frontend to render on completion.
+    """
+    query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.extracted_data:
+        raise HTTPException(status_code=400, detail="No extracted data available")
+
+    data = job.extracted_data
+    if isinstance(data, str):
+        import json
+        data = json.loads(data)
+
+    # Find the items array — it may be at the top level or nested under a key
+    items: list = []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        # Look for a list-valued key (commonly "items", "records", "rows")
+        for key in ("items", "records", "rows", "data"):
+            if key in data and isinstance(data[key], list):
+                items = data[key]
+                break
+        if not items:
+            # Fallback: find the first list-valued key
+            for val in data.values():
+                if isinstance(val, list):
+                    items = val
+                    break
+
+    # Extract column names from the first record
+    columns: list[str] = []
+    if items and isinstance(items[0], dict):
+        columns = list(items[0].keys())
+
+    return {
+        "total_records": len(items),
+        "preview": items[:20],
+        "columns": columns,
+    }

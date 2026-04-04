@@ -106,8 +106,21 @@ export interface Job {
   connection_string: string | null;
   error_message: string | null;
   page_count: number | null;
+  provisioned_rows: number | null;
+  provisioned_at: string | null;
+  target_ddl: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ConnectionTestRequest {
+  connection_string: string;
+  output_format?: string;
+}
+
+export interface ConnectionTestResponse {
+  success: boolean;
+  message: string;
 }
 
 export interface JobListResponse {
@@ -118,6 +131,12 @@ export interface JobListResponse {
 export interface UploadUrlResponse {
   upload_url: string;
   file_key: string;
+}
+
+export interface DataPreviewResponse {
+  total_records: number;
+  preview: Record<string, unknown>[];
+  columns: string[];
 }
 
 // ---- API Methods ----
@@ -172,6 +191,24 @@ export const api = {
     request<Job>(`/api/v1/jobs/${id}/approve-schema`, {
       method: "POST",
       body: { locked_schema: schema },
+      token,
+    }),
+
+  rejectSchema: (id: string, token: string) =>
+    request<Job>(`/api/v1/jobs/${id}/reject-schema`, {
+      method: "POST",
+      token,
+    }),
+
+  getDataPreview: (id: string, token: string) =>
+    request<DataPreviewResponse>(`/api/v1/jobs/${id}/data-preview`, {
+      token,
+    }),
+
+  testConnection: (data: ConnectionTestRequest, token: string) =>
+    request<ConnectionTestResponse>("/api/v1/connections/test", {
+      method: "POST",
+      body: data,
       token,
     }),
 };

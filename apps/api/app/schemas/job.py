@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.job import JobStatus, OutputFormat
 
-
 # --- Request Schemas ---
 
 
@@ -46,6 +45,9 @@ class JobResponse(BaseModel):
     connection_string: str | None = None
     error_message: str | None = None
     page_count: int | None = None
+    provisioned_rows: int | None = None
+    provisioned_at: datetime | None = None
+    target_ddl: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -65,6 +67,18 @@ class JobStatusResponse(BaseModel):
     progress: float
     error_message: str | None = None
     connection_string: str | None = None
+
+
+class DataPreviewResponse(BaseModel):
+    """Paginated preview of extracted data for the frontend.
+
+    The full extracted_data can be megabytes — this returns only the
+    first 20 records plus the total count and column names.
+    """
+
+    total_records: int
+    preview: list[dict]
+    columns: list[str]
 
 
 class UploadUrlResponse(BaseModel):

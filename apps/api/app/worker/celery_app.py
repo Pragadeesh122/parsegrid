@@ -15,6 +15,12 @@ celery_app = Celery(
     "parsegrid",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    include=[
+        "app.worker.tasks.ocr",
+        "app.worker.tasks.extract",
+        "app.worker.tasks.merge",
+        "app.worker.tasks.translate",
+    ],
 )
 
 celery_app.conf.update(
@@ -42,5 +48,6 @@ celery_app.conf.update(
     result_expires=86400,  # 24 hours
 )
 
-# Auto-discover tasks in app.worker.tasks package
-celery_app.autodiscover_tasks(["app.worker.tasks"])
+
+# Register lifecycle signal handlers (task_failure → update job to FAILED)
+import app.worker.callbacks  # noqa: F401, E402

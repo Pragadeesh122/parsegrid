@@ -4,24 +4,68 @@ Uses FastAPI StreamingResponse with text/event-stream content type.
 Subscribes to Redis PubSub channel for the specific job.
 The Next.js client listens using the native browser EventSource API.
 
-NO WebSocket. NO socket.io.
+Authentication: The browser EventSource API cannot send custom headers.
+Instead, the request goes through the Next.js rewrite proxy (same-origin),
+so the Auth.js session cookie is sent automatically. This endpoint reads
+the JWT from that cookie.
+
+NO WebSocket. NO socket.io. NO query-param tokens.
 """
 
 import asyncio
 import json
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_db_session
 from app.core.config import settings
 from app.core.security import TokenPayload
 from app.models.job import Job, JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["SSE"])
+
+
+# --- SSE-specific auth dependency (cookie-based) ---
+
+
+async def verify_sse_cookie(request: Request) -> TokenPayload:
+    """Read the Auth.js session JWT from the cookie and verify it.
+
+    Checks both cookie names:
+    - "authjs.session-token"           (local HTTP / development)
+    - "__Secure-authjs.session-token"  (production HTTPS)
+
+    This is used ONLY for the SSE endpoint because the browser EventSource
+    API cannot send Authorization headers.
+    """
+    token = (
+        request.cookies.get("authjs.session-token")
+        or request.cookies.get("__Secure-authjs.session-token")
+    )
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing session cookie")
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.auth_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_aud": False},
+        )
+        return TokenPayload(payload)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+
+
+# --- SSE event generator ---
 
 
 async def _event_generator(
@@ -82,7 +126,7 @@ async def _event_generator(
                 ):
                     break
 
-            # Send keepalive comment every 15 seconds to prevent timeout
+            # Send keepalive comment every cycle to prevent timeout
             yield ": keepalive\n\n"
             await asyncio.sleep(1)
 
@@ -97,6 +141,9 @@ def _format_sse(data: dict, event: str = "message") -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+# --- Endpoint ---
+
+
 @router.get(
     "/{job_id}/stream",
     summary="SSE stream for real-time job status updates",
@@ -104,16 +151,17 @@ def _format_sse(data: dict, event: str = "message") -> str:
 )
 async def stream_job_status(
     job_id: str,
-    user: TokenPayload = Depends(get_current_user),
+    user: TokenPayload = Depends(verify_sse_cookie),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Server-Sent Events endpoint. Connect with EventSource in the browser.
 
+    Authentication is via the Auth.js session cookie (sent automatically
+    when the request goes through the Next.js rewrite proxy at same-origin).
+
     Usage (client-side):
     ```javascript
-    const es = new EventSource('/api/v1/jobs/{id}/stream', {
-      headers: { Authorization: 'Bearer <token>' }
-    });
+    const es = new EventSource('/api/v1/jobs/{id}/stream');
     es.addEventListener('status', (e) => {
       const data = JSON.parse(e.data);
       console.log(data.status, data.progress);

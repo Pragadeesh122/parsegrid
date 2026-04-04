@@ -1,5 +1,5 @@
 /**
- * ParseGrid — Connection string display component.
+ * ParseGrid — Connection string display component with provisioning audit data.
  */
 
 "use client";
@@ -8,9 +8,15 @@ import { useState } from "react";
 
 interface ConnectionStringProps {
   connectionString: string;
+  provisionedRows?: number | null;
+  provisionedAt?: string | null;
 }
 
-export function ConnectionString({ connectionString }: ConnectionStringProps) {
+export function ConnectionString({
+  connectionString,
+  provisionedRows,
+  provisionedAt,
+}: ConnectionStringProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -38,14 +44,34 @@ export function ConnectionString({ connectionString }: ConnectionStringProps) {
           </svg>
         </div>
         <div>
-          <h4 className="font-semibold text-emerald-300">
-            Data Ready!
-          </h4>
+          <h4 className="font-semibold text-emerald-300">Data Ready!</h4>
           <p className="text-sm text-zinc-400">
             Connect to your structured data using the connection string below.
           </p>
         </div>
       </div>
+
+      {/* Audit stats */}
+      {(provisionedRows != null || provisionedAt) && (
+        <div className="flex gap-6 text-sm">
+          {provisionedRows != null && (
+            <div>
+              <span className="text-zinc-500">Rows inserted: </span>
+              <span className="font-medium text-emerald-400">
+                {provisionedRows.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {provisionedAt && (
+            <div>
+              <span className="text-zinc-500">Provisioned: </span>
+              <span className="font-medium text-zinc-300">
+                {new Date(provisionedAt).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="relative group">
         <code className="block rounded-lg bg-zinc-900 border border-zinc-700 px-4 py-3 text-sm text-zinc-300 font-mono break-all">

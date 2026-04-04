@@ -26,13 +26,14 @@ interface SchemaFormProps {
   isSubmitting?: boolean;
 }
 
+// Flat primitives only — no nested array/object types.
+// This ensures the Translator Agent can generate valid relational SQL DDL.
 const FIELD_TYPES = [
   "string",
   "integer",
   "number",
   "boolean",
-  "array",
-  "object",
+  "date",
 ];
 
 function extractFields(schema: Record<string, unknown>): SchemaField[] {
@@ -57,12 +58,17 @@ function extractFields(schema: Record<string, unknown>): SchemaField[] {
     targetProps = properties as Record<string, Record<string, unknown>>;
   }
 
-  return Object.entries(targetProps).map(([name, def]) => ({
-    name,
-    type: (def.type as string) || "string",
-    description: (def.description as string) || "",
-    required: requiredArr.includes(name),
-  }));
+  return Object.entries(targetProps).map(([name, def]) => {
+    const rawType = (def.type as string) || "string";
+    // Coerce non-primitive types to "string" so the schema stays flat
+    const type = FIELD_TYPES.includes(rawType) ? rawType : "string";
+    return {
+      name,
+      type,
+      description: (def.description as string) || "",
+      required: requiredArr.includes(name),
+    };
+  });
 }
 
 function rebuildSchema(

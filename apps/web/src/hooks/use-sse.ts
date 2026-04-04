@@ -1,7 +1,12 @@
 /**
  * ParseGrid — SSE hook for real-time job status updates.
  * Uses the native browser EventSource API.
- * NO WebSocket. NO socket.io.
+ *
+ * Authentication: Uses a RELATIVE URL so the request goes through the
+ * Next.js rewrite proxy (same-origin). The Auth.js session cookie is
+ * sent automatically — no token query param or Authorization header needed.
+ *
+ * NO WebSocket. NO socket.io. NO query-param tokens.
  */
 
 "use client";
@@ -18,8 +23,6 @@ export interface SSEStatus {
 interface UseSSEOptions {
   /** The job ID to subscribe to */
   jobId: string;
-  /** JWT token for authorization */
-  token: string;
   /** Whether SSE is enabled (disable for completed/failed jobs) */
   enabled?: boolean;
   /** Callback when a status event is received */
@@ -28,11 +31,8 @@ interface UseSSEOptions {
   onError?: (error: Event) => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 export function useSSE({
   jobId,
-  token,
   enabled = true,
   onStatus,
   onError,
@@ -57,15 +57,15 @@ export function useSSE({
   }, []);
 
   useEffect(() => {
-    if (!enabled || !jobId || !token) {
+    if (!enabled || !jobId) {
       disconnect();
       return;
     }
 
-    // EventSource doesn't support custom headers natively,
-    // so we pass the token as a query parameter
-    const url = `${API_BASE}/api/v1/jobs/${jobId}/stream?token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
+    // Relative URL — goes through Next.js rewrite proxy (same-origin).
+    // The Auth.js session cookie is sent automatically by the browser.
+    const url = `/api/v1/jobs/${jobId}/stream`;
+    const es = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = es;
 
     es.onopen = () => {
@@ -108,7 +108,7 @@ export function useSSE({
       es.close();
       setConnected(false);
     };
-  }, [jobId, token, enabled, disconnect]);
+  }, [jobId, enabled, disconnect]);
 
   return { status, connected, error, disconnect };
 }
