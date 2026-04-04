@@ -13,7 +13,13 @@ import type { Job } from "@/lib/api-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export default function JobDetailClient({ jobId }: { jobId: string }) {
+export default function JobDetailClient({
+  jobId,
+  token,
+}: {
+  jobId: string;
+  token: string | null;
+}) {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +28,9 @@ export default function JobDetailClient({ jobId }: { jobId: string }) {
   useEffect(() => {
     const fetchJob = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`);
+        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (!res.ok) throw new Error("Job not found");
         const data = await res.json();
         setJob(data);
@@ -49,7 +57,9 @@ export default function JobDetailClient({ jobId }: { jobId: string }) {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`);
+        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (res.ok) {
           const statusData = await res.json();
           setJob((prev) =>
@@ -73,7 +83,10 @@ export default function JobDetailClient({ jobId }: { jobId: string }) {
         `${API_BASE}/api/v1/jobs/${jobId}/approve-schema`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ locked_schema: editedSchema }),
         },
       );

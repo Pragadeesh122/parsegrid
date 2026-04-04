@@ -1,14 +1,47 @@
 /**
- * ParseGrid — API client.
- * Wraps fetch with JWT Bearer token from Auth.js session.
+ * ParseGrid — API client with Auth.js JWT injection.
+ *
+ * Server Components: Use `getServerToken()` which calls `auth()`.
+ * Client Components: Use `useToken()` hook or pass token as prop from server.
+ *
+ * IMPORTANT: Next.js NEVER touches the database. All data flows through FastAPI.
  */
+
+import { auth } from "@/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-interface RequestOptions extends Omit<RequestInit, "body"> {
-  body?: unknown;
-  token?: string;
+// ---- Token Helpers ----
+
+/**
+ * Get the raw JWT string from the Auth.js session cookie.
+ * For use in Server Components and Server Actions only.
+ * Uses `await auth()` per Next.js 16 conventions (NOT getSession).
+ */
+export async function getServerToken(): Promise<string | null> {
+  // Auth.js stores the session token in a cookie named
+  // `__Secure-authjs.session-token` (prod) or `authjs.session-token` (dev).
+  // We need the RAW cookie value (the JWS string), not the decoded session.
+  const { cookies } = await import("next/headers");
+  const cookieStore = await cookies();
+
+  // Try secure cookie first (production), then non-secure (development)
+  const tokenCookie =
+    cookieStore.get("__Secure-authjs.session-token") ??
+    cookieStore.get("authjs.session-token");
+
+  return tokenCookie?.value ?? null;
 }
+
+/**
+ * Get the decoded session from Auth.js.
+ * For use in Server Components when you need user data (not the raw token).
+ */
+export async function getServerSession() {
+  return await auth();
+}
+
+// ---- HTTP Client ----
 
 export class ApiError extends Error {
   constructor(
@@ -18,6 +51,11 @@ export class ApiError extends Error {
     super(detail);
     this.name = "ApiError";
   }
+}
+
+interface RequestOptions extends Omit<RequestInit, "body"> {
+  body?: unknown;
+  token?: string | null;
 }
 
 async function request<T>(
@@ -52,7 +90,7 @@ async function request<T>(
   return response.json();
 }
 
-// --- Job API ---
+// ---- Type Definitions ----
 
 export interface Job {
   id: string;
@@ -81,6 +119,8 @@ export interface UploadUrlResponse {
   upload_url: string;
   file_key: string;
 }
+
+// ---- API Methods ----
 
 export const api = {
   // Upload
@@ -116,12 +156,19 @@ export const api = {
     request<Job>(`/api/v1/jobs/${id}`, { token }),
 
   getJobStatus: (id: string, token: string) =>
-    request<{ id: string; status: string; progress: number; error_message: string | null; connection_string: string | null }>(
-      `/api/v1/jobs/${id}/status`,
-      { token },
-    ),
+    request<{
+      id: string;
+      status: string;
+      progress: number;
+      error_message: string | null;
+      connection_string: string | null;
+    }>(`/api/v1/jobs/${id}/status`, { token }),
 
-  approveSchema: (id: string, schema: Record<string, unknown>, token: string) =>
+  approveSchema: (
+    id: string,
+    schema: Record<string, unknown>,
+    token: string,
+  ) =>
     request<Job>(`/api/v1/jobs/${id}/approve-schema`, {
       method: "POST",
       body: { locked_schema: schema },

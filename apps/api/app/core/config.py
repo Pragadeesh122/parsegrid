@@ -19,17 +19,17 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # --- Auth (shared with Next.js Auth.js) ---
-    auth_secret: str = "change-me-in-production-min-32-characters"
+    auth_secret: str = "parsegrid-dev-secret-minimum-32-characters-long"
     jwt_algorithm: str = "HS256"
 
     # --- Database (internal metadata) ---
-    database_url: str = "postgresql+asyncpg://parsegrid:parsegrid@localhost:5432/parsegrid"
+    database_url: str = "postgresql+asyncpg://parsegrid:parsegrid@localhost:5436/parsegrid"
 
     # --- Redis (Celery broker + result backend) ---
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
 
     # --- S3-Compatible Storage ---
-    s3_endpoint_url: str | None = "http://localhost:9000"
+    s3_endpoint_url: str | None = "http://localhost:9002"
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_bucket: str = "parsegrid-uploads"
