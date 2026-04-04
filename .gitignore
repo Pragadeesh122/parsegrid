@@ -41,3 +41,8 @@ htmlcov/
 
 # Build
 *.tsbuildinfo
+
+# Local AI assistant context
+AGENTS.md
+CLAUDE.md
+architecture/
