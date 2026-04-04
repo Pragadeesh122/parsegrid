@@ -4,12 +4,10 @@ Translates extracted JSON data to SQL DDL + INSERT statements,
 provisions an isolated PostgreSQL schema, and generates a connection string.
 """
 
-import json
 import logging
 
-from app.core.config import settings
 from app.worker.celery_app import celery_app
-from app.worker.tasks.ocr import _publish_status, _update_job_in_db
+from app.worker.db import publish_status, update_job
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +33,8 @@ def translate_and_provision(
     6. Update job to COMPLETED
     """
     try:
-        _publish_status(job_id, "TRANSLATING", 0.0)
-        _update_job_in_db(job_id, status="TRANSLATING", progress=0.0)
+        publish_status(job_id, "TRANSLATING", 0.0)
+        update_job(job_id, status="TRANSLATING", progress=0.0)
 
         # 1. Generate DDL via LLM
         from app.providers.factory import get_llm_provider
@@ -44,12 +42,12 @@ def translate_and_provision(
         llm = get_llm_provider()
         ddl = llm.generate_ddl(schema, "SQL")
 
-        _publish_status(job_id, "TRANSLATING", 30.0)
+        publish_status(job_id, "TRANSLATING", 30.0)
         logger.info(f"Job {job_id}: DDL generated ({len(ddl)} chars)")
 
         # 2. Provision schema + execute DDL + insert data
-        _publish_status(job_id, "PROVISIONING", 40.0)
-        _update_job_in_db(job_id, status="PROVISIONING", progress=40.0)
+        publish_status(job_id, "PROVISIONING", 40.0)
+        update_job(job_id, status="PROVISIONING", progress=40.0)
 
         from app.services.provisioning import provision_and_insert
 
@@ -61,10 +59,10 @@ def translate_and_provision(
             json_schema=schema,
         )
 
-        _publish_status(job_id, "PROVISIONING", 80.0)
+        publish_status(job_id, "PROVISIONING", 80.0)
 
         # 3. Update job to COMPLETED
-        _update_job_in_db(
+        update_job(
             job_id,
             status="COMPLETED",
             progress=100.0,
@@ -72,7 +70,7 @@ def translate_and_provision(
             connection_string=connection_string,
         )
 
-        _publish_status(
+        publish_status(
             job_id,
             "COMPLETED",
             100.0,
@@ -83,6 +81,6 @@ def translate_and_provision(
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: translation/provisioning failed")
-        _publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        _update_job_in_db(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
+        update_job(job_id, status="FAILED", error_message=str(exc))
         raise

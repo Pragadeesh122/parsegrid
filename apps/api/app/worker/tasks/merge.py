@@ -10,7 +10,7 @@ import logging
 from app.core.config import settings
 from app.services.extraction import merge_extraction_results
 from app.worker.celery_app import celery_app
-from app.worker.tasks.ocr import _publish_status, _update_job_in_db
+from app.worker.db import publish_status, update_job
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,13 @@ def merge_results(self, chunk_results: list[dict], job_id: str, schema: dict):
     After merging, stores the result and triggers the translation task.
     """
     try:
-        _publish_status(job_id, "MERGING", 0.0)
-        _update_job_in_db(job_id, status="MERGING", progress=0.0)
+        publish_status(job_id, "MERGING", 0.0)
+        update_job(job_id, status="MERGING", progress=0.0)
 
         # Merge with deduplication
         merged = merge_extraction_results(chunk_results, schema)
 
-        _publish_status(job_id, "MERGING", 50.0)
+        publish_status(job_id, "MERGING", 50.0)
 
         # Store merged result in S3
         from app.core.storage import upload_file_to_s3
@@ -48,14 +48,14 @@ def merge_results(self, chunk_results: list[dict], job_id: str, schema: dict):
         )
 
         # Update job record with extracted data
-        _update_job_in_db(
+        update_job(
             job_id,
             status="MERGING",
             progress=80.0,
             extracted_data=json.dumps(merged),
         )
 
-        _publish_status(job_id, "MERGING", 100.0)
+        publish_status(job_id, "MERGING", 100.0)
 
         logger.info(f"Job {job_id}: merge complete, triggering translation")
 
@@ -66,6 +66,6 @@ def merge_results(self, chunk_results: list[dict], job_id: str, schema: dict):
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: merge failed")
-        _publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        _update_job_in_db(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
+        update_job(job_id, status="FAILED", error_message=str(exc))
         raise

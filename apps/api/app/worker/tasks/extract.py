@@ -7,12 +7,11 @@ Orchestrates parallel chunk extraction using Celery groups and chords.
 import json
 import logging
 
-import redis
 from celery import chord, group
 
 from app.core.config import settings
 from app.worker.celery_app import celery_app
-from app.worker.tasks.ocr import _publish_status, _update_job_in_db
+from app.worker.db import get_job_field, publish_status, update_job
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,9 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     name="app.worker.tasks.extract.extract_chunk",
     bind=True,
-    max_retries=3,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=5,
     queue="extraction",
 )
 def extract_chunk(self, job_id: str, chunk_index: int, chunk_text: str, schema: dict):
@@ -28,28 +29,26 @@ def extract_chunk(self, job_id: str, chunk_index: int, chunk_text: str, schema: 
 
     Uses the configured LLM provider with structured output enforcement.
     Returns chunk result for the merge phase.
+
+    Decorated with autoretry_for + retry_backoff to handle OpenAI rate limits
+    at the individual chunk level rather than failing the entire job.
     """
-    try:
-        from app.providers.factory import get_llm_provider
+    from app.providers.factory import get_llm_provider
 
-        llm = get_llm_provider()
-        result = llm.extract_structured(chunk_text, schema)
+    llm = get_llm_provider()
+    result = llm.extract_structured(chunk_text, schema)
 
-        logger.info(
-            f"Job {job_id} chunk {chunk_index}: "
-            f"extracted {len(result.data.get('items', []) if isinstance(result.data, dict) else result.data)} records, "
-            f"tokens used: {result.usage.get('total_tokens', 0)}"
-        )
+    logger.info(
+        f"Job {job_id} chunk {chunk_index}: "
+        f"extracted {len(result.data.get('items', []) if isinstance(result.data, dict) else result.data)} records, "
+        f"tokens used: {result.usage.get('total_tokens', 0)}"
+    )
 
-        return {
-            "chunk_index": chunk_index,
-            "data": result.data,
-            "tokens": result.usage,
-        }
-
-    except Exception as exc:
-        logger.exception(f"Job {job_id} chunk {chunk_index}: extraction failed")
-        raise self.retry(exc=exc, countdown=30)
+    return {
+        "chunk_index": chunk_index,
+        "data": result.data,
+        "tokens": result.usage,
+    }
 
 
 @celery_app.task(
@@ -63,12 +62,12 @@ def run_extraction(self, job_id: str):
     1. Load parsed text from S3
     2. Load locked schema from job record
     3. Chunk text into overlapping blocks
-    4. Fan out extract_chunk tasks via Celery group
-    5. Use chord to trigger merge_results when all chunks complete
+    4. Fan out extract_chunk tasks via Celery chord (parallel, NOT sequential)
+    5. Chord callback triggers merge_results when all chunks complete
     """
     try:
-        _publish_status(job_id, "EXTRACTING", 0.0)
-        _update_job_in_db(job_id, status="EXTRACTING", progress=0.0)
+        publish_status(job_id, "EXTRACTING", 0.0)
+        update_job(job_id, status="EXTRACTING", progress=0.0)
 
         # 1. Load parsed text from S3
         from app.core.storage import get_s3_client
@@ -78,21 +77,11 @@ def run_extraction(self, job_id: str):
         response = s3.get_object(Bucket=settings.s3_bucket, Key=parsed_key)
         full_text = response["Body"].read().decode("utf-8")
 
-        # 2. Load locked schema from DB
-        from sqlalchemy import create_engine, text
-        from sqlalchemy.orm import Session
-
-        sync_url = settings.database_url.replace("+asyncpg", "+psycopg2").replace(
-            "postgresql+psycopg2", "postgresql"
-        )
-        engine = create_engine(sync_url)
-        with Session(engine) as session:
-            row = session.execute(
-                text("SELECT locked_schema FROM jobs WHERE id = :job_id"),
-                {"job_id": job_id},
-            ).one()
-            locked_schema = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-        engine.dispose()
+        # 2. Load locked schema from DB via shared engine
+        job = get_job_field(job_id, "locked_schema")
+        locked_schema = job["locked_schema"]
+        if isinstance(locked_schema, str):
+            locked_schema = json.loads(locked_schema)
 
         # 3. Chunk text
         from app.services.extraction import chunk_text
@@ -101,11 +90,9 @@ def run_extraction(self, job_id: str):
 
         logger.info(f"Job {job_id}: {len(chunks)} chunks created, starting parallel extraction")
 
-        _publish_status(job_id, "EXTRACTING", 10.0)
+        publish_status(job_id, "EXTRACTING", 10.0)
 
-        # 4. Fan out extraction tasks via Celery chord
-        # The chord will run all extract_chunk tasks in parallel,
-        # then trigger merge_results with all the results
+        # 4. Fan out extraction tasks via Celery chord (parallel execution)
         from app.worker.tasks.merge import merge_results
 
         extraction_tasks = group(
@@ -114,7 +101,7 @@ def run_extraction(self, job_id: str):
         )
 
         # Chord: parallel extraction → merge callback
-        workflow = chord(extraction_tasks)(
+        chord(extraction_tasks)(
             merge_results.s(job_id, locked_schema)
         )
 
@@ -122,6 +109,6 @@ def run_extraction(self, job_id: str):
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: extraction orchestration failed")
-        _publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        _update_job_in_db(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
+        update_job(job_id, status="FAILED", error_message=str(exc))
         raise
