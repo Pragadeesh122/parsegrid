@@ -4,8 +4,8 @@
 
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type Job, type JobListResponse } from "@/lib/api-client";
+import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
+import {api, type Job, type JobListResponse} from "@/lib/api-client";
 
 // --- Queries ---
 
@@ -14,7 +14,7 @@ export function useJobs(token: string) {
     queryKey: ["jobs"],
     queryFn: () => api.listJobs(token),
     enabled: !!token,
-    refetchInterval: 10000, // Poll every 10s for new jobs
+    refetchInterval: 3000, // Poll every 10s for new jobs
   });
 }
 
@@ -23,6 +23,11 @@ export function useJob(id: string, token: string) {
     queryKey: ["job", id],
     queryFn: () => api.getJob(id, token),
     enabled: !!token && !!id,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "COMPLETED" || status === "FAILED") return false;
+      return 3000; // Poll every 3s as SSE fallback for active jobs
+    },
   });
 }
 
@@ -48,7 +53,7 @@ export function useCreateJob(token: string) {
       output_format?: string;
     }) => api.createJob(data, token),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
     },
   });
 }
@@ -65,8 +70,8 @@ export function useApproveSchema(token: string) {
       schema: Record<string, unknown>;
     }) => api.approveSchema(jobId, schema, token),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["job", data.id] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({queryKey: ["job", data.id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
     },
   });
 }

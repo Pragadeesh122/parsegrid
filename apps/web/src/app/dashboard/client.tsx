@@ -1,16 +1,14 @@
 /**
  * ParseGrid — Dashboard client component.
+ * Uses TanStack Query for automatic polling of job status.
  */
 
 "use client";
 
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/job-status/status-badge";
-import type { Job } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { useJobs } from "@/hooks/use-jobs";
 
 interface DashboardClientProps {
   user: {
@@ -22,33 +20,8 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ user, token }: DashboardClientProps) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-
-    const fetchJobs = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/jobs`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setJobs(data.jobs || []);
-        }
-      } catch {
-        // Silently fail — empty state is shown
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchJobs();
-    // Poll every 10 seconds
-    const interval = setInterval(fetchJobs, 10000);
-    return () => clearInterval(interval);
-  }, [token]);
+  const { data, isLoading: loading } = useJobs(token ?? "");
+  const jobs = data?.jobs ?? [];
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 space-y-8">

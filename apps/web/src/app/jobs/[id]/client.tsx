@@ -1,23 +1,22 @@
 /**
  * ParseGrid — Job detail client component with real-time SSE status.
  *
- * Uses the SSE hook for live progress updates (cookie-based auth via
- * the Next.js rewrite proxy). Falls back to a full job re-fetch on
- * terminal status to pick up fields SSE doesn't carry (connection_string, etc.).
+ * Uses TanStack Query for data fetching + SSE overlay for live progress.
+ * Falls back to query invalidation on terminal status to pick up fields
+ * SSE doesn't carry (connection_string, etc.).
  */
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { ProgressBar } from "@/components/job-status/progress-bar";
 import { SchemaForm } from "@/components/schema-editor/schema-form";
 import { ConnectionString } from "@/components/connection/conn-string";
 import { DataPreview } from "@/components/data-preview/data-table";
+import { useJob, useApproveSchema } from "@/hooks/use-jobs";
 import { useSSE } from "@/hooks/use-sse";
-import type { Job } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function JobDetailClient({
   jobId,
@@ -26,46 +25,12 @@ export default function JobDetailClient({
   jobId: string;
   token: string | null;
 }) {
-  const [job, setJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { data: job, isLoading: loading, error: queryError } = useJob(jobId, token ?? "");
+  const approveMutation = useApproveSchema(token ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Initial fetch ---
-  useEffect(() => {
-    const fetchJob = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error("Job not found");
-        const data = await res.json();
-        setJob(data);
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchJob();
-  }, [jobId, token]);
-
-  // --- Full re-fetch (used after SSE terminal event or mutations) ---
-  const refetchJob = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setJob(data);
-      }
-    } catch {
-      // Silently retry on next opportunity
-    }
-  }, [jobId, token]);
-
-  // --- SSE for live progress ---
+  // SSE overlay — merges live progress into the cached query data
   const isProcessing =
     !!job &&
     job.status !== "COMPLETED" &&
@@ -77,8 +42,8 @@ export default function JobDetailClient({
     jobId,
     enabled: isProcessing,
     onStatus: (data) => {
-      // Merge SSE status into local job state
-      setJob((prev) =>
+      // Merge SSE status into TanStack Query cache
+      queryClient.setQueryData(["job", jobId], (prev: typeof job) =>
         prev
           ? {
               ...prev,
@@ -90,9 +55,10 @@ export default function JobDetailClient({
           : prev,
       );
 
-      // On terminal status, re-fetch the full job to get all fields
+      // On terminal status, invalidate to get all fields (provisioned_rows, etc.)
       if (data.status === "COMPLETED" || data.status === "FAILED") {
-        refetchJob();
+        queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+        queryClient.invalidateQueries({ queryKey: ["jobs"] });
       }
     },
   });
@@ -103,20 +69,8 @@ export default function JobDetailClient({
   ) => {
     setIsSubmitting(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/api/v1/jobs/${jobId}/approve-schema`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ locked_schema: editedSchema }),
-        },
-      );
-      if (!res.ok) throw new Error("Schema approval failed");
-      const updatedJob = await res.json();
-      setJob(updatedJob);
+      await approveMutation.mutateAsync({ jobId, schema: editedSchema });
+      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (e) {
       console.error("Schema approval failed:", e);
     } finally {
@@ -128,6 +82,7 @@ export default function JobDetailClient({
   const handleRejectSchema = async () => {
     setIsSubmitting(true);
     try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const res = await fetch(
         `${API_BASE}/api/v1/jobs/${jobId}/reject-schema`,
         {
@@ -139,14 +94,16 @@ export default function JobDetailClient({
         },
       );
       if (!res.ok) throw new Error("Schema rejection failed");
-      const updatedJob = await res.json();
-      setJob(updatedJob);
+      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     } catch (e) {
       console.error("Schema rejection failed:", e);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const error = queryError ? (queryError as Error).message : null;
 
   // --- Render states ---
 
@@ -173,7 +130,7 @@ export default function JobDetailClient({
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12 space-y-8">
+    <div className="mx-auto max-w-4xl px-6 py-12 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
