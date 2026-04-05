@@ -42,7 +42,6 @@ export default function JobDetailClient({
     jobId,
     enabled: isProcessing,
     onStatus: (data) => {
-      // Merge SSE status into TanStack Query cache
       queryClient.setQueryData(["job", jobId], (prev: typeof job) =>
         prev
           ? {
@@ -55,7 +54,6 @@ export default function JobDetailClient({
           : prev,
       );
 
-      // On terminal status, invalidate to get all fields (provisioned_rows, etc.)
       if (data.status === "COMPLETED" || data.status === "FAILED") {
         queryClient.invalidateQueries({ queryKey: ["job", jobId] });
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -63,7 +61,6 @@ export default function JobDetailClient({
     },
   });
 
-  // --- Schema approval ---
   const handleApproveSchema = async (
     editedSchema: Record<string, unknown>,
   ) => {
@@ -78,7 +75,6 @@ export default function JobDetailClient({
     }
   };
 
-  // --- Schema rejection ---
   const handleRejectSchema = async () => {
     setIsSubmitting(true);
     try {
@@ -105,12 +101,10 @@ export default function JobDetailClient({
 
   const error = queryError ? (queryError as Error).message : null;
 
-  // --- Render states ---
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
       </div>
     );
   }
@@ -121,99 +115,123 @@ export default function JobDetailClient({
         <p className="text-red-400">{error || "Job not found"}</p>
         <Link
           href="/dashboard"
-          className="text-sm text-indigo-400 hover:text-indigo-300"
+          className="text-sm text-zinc-400 hover:text-zinc-100"
         >
-          &larr; Back to Dashboard
+          Back to Dashboard
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-12 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="min-h-[100dvh] flex flex-col">
+      {/* Nav */}
+      <nav className="sticky top-0 z-30 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="text-base font-semibold tracking-tight text-zinc-100">
+                ParseGrid
+              </span>
+            </Link>
+            <span className="text-zinc-700">/</span>
+            <span className="text-sm text-zinc-400 truncate max-w-[200px]">
+              {job.filename}
+            </span>
+          </div>
           <Link
             href="/dashboard"
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-sm text-zinc-400 transition-colors hover:text-zinc-100"
           >
-            &larr; Dashboard
+            All Jobs
           </Link>
-          <h1 className="mt-2 text-2xl font-bold text-zinc-100">
-            {job.filename}
-          </h1>
-          <p className="text-sm text-zinc-500 font-mono">{job.id}</p>
         </div>
-      </div>
+      </nav>
 
-      {/* Progress */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <ProgressBar
-          status={job.status}
-          progress={job.progress}
-          errorMessage={job.error_message}
-        />
-      </div>
+      <main className="flex-1">
+        <div className="mx-auto max-w-5xl px-6 py-10 space-y-8">
+          {/* Header */}
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+              {job.filename}
+            </h1>
+            <p className="mt-1 text-xs font-mono text-zinc-600">{job.id}</p>
+          </div>
 
-      {/* Schema Editor (shows when schema is proposed) */}
-      {(job.status === "SCHEMA_PROPOSED" ||
-        job.status === "AWAITING_REVIEW") &&
-        job.proposed_schema && (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-            <SchemaForm
-              proposedSchema={job.proposed_schema}
-              onApprove={handleApproveSchema}
-              onReject={handleRejectSchema}
-              isSubmitting={isSubmitting}
+          {/* Progress */}
+          <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-6">
+            <ProgressBar
+              status={job.status}
+              progress={job.progress}
+              errorMessage={job.error_message}
             />
           </div>
-        )}
 
-      {/* Connection String (shows when completed) */}
-      {job.status === "COMPLETED" && job.connection_string && (
-        <ConnectionString
-          connectionString={job.connection_string}
-          provisionedRows={job.provisioned_rows}
-          provisionedAt={job.provisioned_at}
-        />
-      )}
+          {/* Schema Editor */}
+          {(job.status === "SCHEMA_PROPOSED" ||
+            job.status === "AWAITING_REVIEW") &&
+            job.proposed_schema && (
+              <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-6">
+                <SchemaForm
+                  proposedSchema={job.proposed_schema}
+                  onApprove={handleApproveSchema}
+                  onReject={handleRejectSchema}
+                  isSubmitting={isSubmitting}
+                />
+              </div>
+            )}
 
-      {/* Data Preview (shows when completed) */}
-      {job.status === "COMPLETED" && token && (
-        <DataPreview jobId={job.id} token={token} />
-      )}
-
-      {/* Job Metadata */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
-          Job Details
-        </h3>
-        <dl className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <dt className="text-zinc-500">Output Format</dt>
-            <dd className="text-zinc-200 font-medium">{job.output_format}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">File Size</dt>
-            <dd className="text-zinc-200 font-medium">
-              {(job.file_size / 1024 / 1024).toFixed(2)} MB
-            </dd>
-          </div>
-          {job.page_count && (
-            <div>
-              <dt className="text-zinc-500">Pages</dt>
-              <dd className="text-zinc-200 font-medium">{job.page_count}</dd>
-            </div>
+          {/* Connection String */}
+          {job.status === "COMPLETED" && job.connection_string && (
+            <ConnectionString
+              connectionString={job.connection_string}
+              provisionedRows={job.provisioned_rows}
+              provisionedAt={job.provisioned_at}
+            />
           )}
-          <div>
-            <dt className="text-zinc-500">Created</dt>
-            <dd className="text-zinc-200 font-medium">
-              {new Date(job.created_at).toLocaleString()}
-            </dd>
+
+          {/* Data Preview */}
+          {job.status === "COMPLETED" && token && (
+            <DataPreview jobId={job.id} token={token} />
+          )}
+
+          {/* Job Metadata */}
+          <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Details
+            </h3>
+            <dl className="mt-4 grid grid-cols-2 gap-6 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-zinc-500">Format</dt>
+                <dd className="mt-1 font-medium text-zinc-200">
+                  {job.output_format}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">File Size</dt>
+                <dd className="mt-1 font-medium font-mono text-zinc-200">
+                  {(job.file_size / 1024 / 1024).toFixed(2)} MB
+                </dd>
+              </div>
+              {job.page_count && (
+                <div>
+                  <dt className="text-zinc-500">Pages</dt>
+                  <dd className="mt-1 font-medium font-mono text-zinc-200">
+                    {job.page_count}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-zinc-500">Created</dt>
+                <dd className="mt-1 font-medium text-zinc-200">
+                  {new Date(job.created_at).toLocaleString()}
+                </dd>
+              </div>
+            </dl>
           </div>
-        </dl>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

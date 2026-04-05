@@ -5,6 +5,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Dropzone } from "@/components/upload/dropzone";
 
@@ -33,7 +34,6 @@ export function NewJobClient({ token }: NewJobClientProps) {
     setError(null);
 
     try {
-      // Upload file to FastAPI
       const formData = new FormData();
       formData.append("file", selectedFile);
 
@@ -46,7 +46,6 @@ export function NewJobClient({ token }: NewJobClientProps) {
       if (!uploadRes.ok) throw new Error("Upload failed");
       const { file_key } = await uploadRes.json();
 
-      // Create the extraction job
       const jobRes = await fetch(`${API_BASE}/api/v1/jobs`, {
         method: "POST",
         headers: {
@@ -72,109 +71,114 @@ export function NewJobClient({ token }: NewJobClientProps) {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12 space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-100">
-          New Extraction Job
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Upload a document and ParseGrid will extract structured data using AI.
-        </p>
-      </div>
-
-      {/* Upload */}
-      <Dropzone
-        onFileSelected={handleFileSelected}
-        isUploading={isUploading}
-      />
-
-      {/* Selected File Info */}
-      {selectedFile && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 flex items-center justify-between">
+    <div className="min-h-[100dvh] flex flex-col">
+      {/* Nav */}
+      <nav className="sticky top-0 z-30 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-indigo-500/20 p-2">
-              <svg
-                className="h-5 w-5 text-indigo-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="text-base font-semibold tracking-tight text-zinc-100">
+                ParseGrid
+              </span>
+            </Link>
+            <span className="text-zinc-700">/</span>
+            <span className="text-sm text-zinc-400">New Job</span>
+          </div>
+          <Link
+            href="/dashboard"
+            className="text-sm text-zinc-400 transition-colors hover:text-zinc-100"
+          >
+            Cancel
+          </Link>
+        </div>
+      </nav>
+
+      <main className="flex-1">
+        <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+              New Extraction Job
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Upload a document and ParseGrid will extract structured data.
+            </p>
+          </div>
+
+          <Dropzone
+            onFileSelected={handleFileSelected}
+            isUploading={isUploading}
+          />
+
+          {selectedFile && (
+            <div className="flex items-center justify-between rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <svg
+                    className="h-4 w-4 text-emerald-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-xs font-mono text-zinc-500">
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedFile(null)}
+                className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                />
-              </svg>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <div>
-              <p className="text-sm font-medium text-zinc-200">
-                {selectedFile.name}
-              </p>
-              <p className="text-xs text-zinc-500">
-                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-              </p>
+          )}
+
+          {/* Output Format */}
+          <div className="space-y-3">
+            <label className="text-sm text-zinc-400">Output Format</label>
+            <div className="flex gap-2">
+              {["SQL", "GRAPH", "VECTOR"].map((format) => (
+                <button
+                  key={format}
+                  onClick={() => setOutputFormat(format)}
+                  className={`rounded-xl border px-5 py-2 text-sm font-medium transition-all active:scale-[0.98] ${
+                    outputFormat === format
+                      ? "border-emerald-600 bg-emerald-600/10 text-emerald-400"
+                      : "border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                  }`}
+                >
+                  {format}
+                </button>
+              ))}
             </div>
           </div>
+
+          {error && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
           <button
-            onClick={() => setSelectedFile(null)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            onClick={handleSubmit}
+            disabled={!selectedFile || isUploading || !token}
+            className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            {isUploading ? "Processing..." : "Start Extraction"}
           </button>
         </div>
-      )}
-
-      {/* Output Format */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-zinc-300">
-          Output Format
-        </label>
-        <div className="flex gap-3">
-          {["SQL", "GRAPH", "VECTOR"].map((format) => (
-            <button
-              key={format}
-              onClick={() => setOutputFormat(format)}
-              className={`rounded-xl border px-5 py-2.5 text-sm font-medium transition-colors ${
-                outputFormat === format
-                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
-                  : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
-              }`}
-            >
-              {format}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">
-          {error}
-        </div>
-      )}
-
-      {/* Submit */}
-      <button
-        onClick={handleSubmit}
-        disabled={!selectedFile || isUploading || !token}
-        className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isUploading ? "Processing..." : "Upload & Start Extraction"}
-      </button>
+      </main>
     </div>
   );
 }

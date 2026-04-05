@@ -1,6 +1,6 @@
 /**
  * ParseGrid — Register page.
- * Calls FastAPI /api/v1/auth/register directly, then auto-signs in.
+ * Split layout matching login. Calls FastAPI then auto-signs in.
  */
 
 "use client";
@@ -38,7 +38,6 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // Register via FastAPI
       const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,7 +51,6 @@ export default function RegisterPage() {
         return;
       }
 
-      // Auto sign-in after successful registration
       const result = await signIn("credentials", {
         email,
         password,
@@ -60,7 +58,6 @@ export default function RegisterPage() {
       });
 
       if (result?.error) {
-        // Registration succeeded but sign-in failed — redirect to login
         router.push("/login");
         return;
       }
@@ -73,145 +70,152 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-6">
-      <div className="w-full max-w-sm space-y-8">
-        {/* Logo */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold">
-            <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              ParseGrid
-            </span>
-          </h1>
-          <p className="mt-2 text-sm text-zinc-500">
-            Create your account
+    <div className="grid min-h-[100dvh] grid-cols-1 lg:grid-cols-2">
+      {/* Left — branding panel */}
+      <div className="hidden lg:flex flex-col justify-between border-r border-zinc-800/60 bg-zinc-900/30 p-12">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="text-base font-semibold tracking-tight text-zinc-100">
+            ParseGrid
+          </span>
+        </Link>
+
+        <div className="space-y-4">
+          <h2 className="text-3xl font-bold tracking-tighter text-zinc-100">
+            Start extracting
+            <br />
+            in under a minute.
+          </h2>
+          <p className="max-w-[40ch] text-sm leading-relaxed text-zinc-500">
+            Create your account, upload a document, and get a connection string
+            to your structured data.
           </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-zinc-300"
-            >
-              Name <span className="text-zinc-600">(optional)</span>
-            </label>
-            <input
-              id="name"
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
-              placeholder="John Doe"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-zinc-300"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-zinc-300"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label
-              htmlFor="confirm-password"
-              className="block text-sm font-medium text-zinc-300"
-            >
-              Confirm Password
-            </label>
-            <input
-              id="confirm-password"
-              type="password"
-              required
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Creating account...
-              </>
-            ) : (
-              "Create Account"
-            )}
-          </button>
-        </form>
-
-        {/* Login Link */}
-        <p className="text-center text-sm text-zinc-500">
-          Already have an account?{" "}
-          <Link
-            href="/login"
-            className="text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            Sign in
-          </Link>
+        <p className="text-xs text-zinc-700">
+          ParseGrid Community Edition
         </p>
       </div>
-    </main>
+
+      {/* Right — form */}
+      <div className="flex flex-col items-center justify-center px-6 py-12">
+        <Link href="/" className="mb-12 flex items-center gap-2 lg:hidden">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="text-base font-semibold tracking-tight text-zinc-100">
+            ParseGrid
+          </span>
+        </Link>
+
+        <div className="w-full max-w-sm space-y-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
+              Create account
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Fill in your details to get started.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="name" className="block text-sm text-zinc-400">
+                Name <span className="text-zinc-700">(optional)</span>
+              </label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+                placeholder="Your name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="email" className="block text-sm text-zinc-400">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+                placeholder="you@example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-sm text-zinc-400">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+                placeholder="Min. 8 characters"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="confirm-password" className="block text-sm text-zinc-400">
+                Confirm Password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+                placeholder="Repeat password"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-sm text-red-400">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Creating account...
+                </>
+              ) : (
+                "Create Account"
+              )}
+            </button>
+          </form>
+
+          <p className="text-center text-sm text-zinc-600">
+            Already have an account?{" "}
+            <Link
+              href="/login"
+              className="text-zinc-400 transition-colors hover:text-zinc-100"
+            >
+              Sign in
+            </Link>
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

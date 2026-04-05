@@ -18,15 +18,17 @@ async function NewJobContent() {
 
   const token = await getServerToken();
 
-  return <NewJobClient token={token} />;
+  // key={Date.now()} forces a fresh component mount on every navigation,
+  // resetting file selection and upload state.
+  return <NewJobClient key={Date.now()} token={token} />;
 }
 
 export default function NewJobPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" />
+        <div className="flex min-h-[100dvh] items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
         </div>
       }
     >
