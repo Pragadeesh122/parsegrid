@@ -7,6 +7,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
 import { Dropzone } from "@/components/upload/dropzone";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -71,33 +72,35 @@ export function NewJobClient({ token }: NewJobClientProps) {
   };
 
   return (
-    <div className="min-h-[100dvh] flex flex-col">
-      {/* Nav */}
-      <nav className="sticky top-0 z-30 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="text-base font-semibold tracking-tight text-zinc-100">
-                ParseGrid
-              </span>
-            </Link>
-            <span className="text-zinc-700">/</span>
-            <span className="text-sm text-zinc-400">New Job</span>
-          </div>
+    <AppShell>
+      <div className="px-6 py-8 lg:px-10">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm">
           <Link
             href="/dashboard"
-            className="text-sm text-zinc-400 transition-colors hover:text-zinc-100"
+            className="text-zinc-500 transition-colors hover:text-zinc-300"
           >
-            Cancel
+            Dashboard
           </Link>
+          <svg
+            className="h-3.5 w-3.5 text-zinc-700"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8.25 4.5l7.5 7.5-7.5 7.5"
+            />
+          </svg>
+          <span className="text-zinc-300">New Job</span>
         </div>
-      </nav>
 
-      <main className="flex-1">
-        <div className="mx-auto max-w-2xl px-6 py-10 space-y-8">
+        <div className="mt-6 max-w-2xl space-y-8">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
               New Extraction Job
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
@@ -121,7 +124,11 @@ export function NewJobClient({ token }: NewJobClientProps) {
                     stroke="currentColor"
                     strokeWidth={1.5}
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -137,8 +144,18 @@ export function NewJobClient({ token }: NewJobClientProps) {
                 onClick={() => setSelectedFile(null)}
                 className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -178,7 +195,7 @@ export function NewJobClient({ token }: NewJobClientProps) {
             {isUploading ? "Processing..." : "Start Extraction"}
           </button>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
