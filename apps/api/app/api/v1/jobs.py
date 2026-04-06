@@ -16,6 +16,7 @@ from app.schemas.job import (
     JobResponse,
     JobStatusResponse,
     SchemaApprovalRequest,
+    TargetQueryRequest,
 )
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -40,6 +41,7 @@ async def create_job(
         file_key=body.file_key,
         file_size=body.file_size,
         output_format=body.output_format,
+        job_type=body.job_type,
         status=JobStatus.UPLOADED,
         progress=0.0,
     )
@@ -251,3 +253,97 @@ async def get_data_preview(
         "preview": items[:20],
         "columns": columns,
     }
+
+
+@router.post(
+    "/{job_id}/target-query",
+    response_model=JobResponse,
+    summary="Submit a targeted extraction query",
+)
+async def target_query(
+    job_id: str,
+    body: TargetQueryRequest,
+    user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Job:
+    """Submit a natural language query for targeted RAG extraction.
+
+    Embeds the query, retrieves the top 10 most relevant chunks via
+    pgvector cosine similarity, generates a schema from those chunks,
+    and stores the target chunks for subsequent extraction.
+    """
+    from sqlalchemy import text as sql_text
+
+    query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != JobStatus.AWAITING_QUERY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot submit query in status {job.status}. Job must be in AWAITING_QUERY.",
+        )
+
+    # 1. Embed the user's query
+    from app.providers.factory import get_embedding_provider
+
+    embedder = get_embedding_provider()
+    query_embedding = embedder.embed_query(body.query)
+    embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+
+    # 2. Retrieve top 10 chunks via cosine similarity
+    chunk_result = await db.execute(
+        sql_text(
+            "SELECT chunk_text, page_number, 1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity "
+            "FROM document_chunks "
+            "WHERE job_id = :job_id "
+            "ORDER BY embedding <=> CAST(:query_embedding AS vector) "
+            "LIMIT 10"
+        ),
+        {"job_id": job_id, "query_embedding": embedding_str},
+    )
+    rows = chunk_result.fetchall()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No indexed chunks found for this job")
+
+    # 3. Build context from retrieved chunks
+    retrieved_chunks = []
+    context_parts = []
+    for row in rows:
+        chunk_text, page_number, similarity = row
+        retrieved_chunks.append({
+            "text": chunk_text,
+            "page_number": page_number,
+            "similarity": float(similarity),
+        })
+        context_parts.append(f"[Page {page_number}]\n{chunk_text}")
+
+    context_text = "\n\n---\n\n".join(context_parts)
+
+    # 4. Generate schema from retrieved chunks
+    from app.providers.factory import get_llm_provider
+
+    llm = get_llm_provider()
+    proposed_schema = llm.generate_schema(context_text, len(rows))
+
+    # 5. Store target chunks and schema on the job
+    import json
+
+    job.target_chunks = retrieved_chunks
+    job.proposed_schema = proposed_schema if isinstance(proposed_schema, dict) else json.loads(proposed_schema)
+    job.status = JobStatus.SCHEMA_PROPOSED
+    job.progress = 100.0
+    await db.commit()
+    await db.refresh(job)
+
+    # 6. Publish SSE event
+    from app.worker.db import _get_redis_client
+
+    r = _get_redis_client()
+    channel = f"job:{job_id}:status"
+    r.publish(channel, json.dumps({"status": "SCHEMA_PROPOSED", "progress": 100.0}))
+
+    return job

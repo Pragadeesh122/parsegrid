@@ -8,7 +8,7 @@ the open-core providers (PaddleOCR + OpenAI).
 from functools import lru_cache
 
 from app.core.config import settings
-from app.providers import BaseLLMProvider, BaseOCRProvider, BaseOutputProvider
+from app.providers import BaseEmbeddingProvider, BaseLLMProvider, BaseOCRProvider, BaseOutputProvider
 
 
 @lru_cache(maxsize=1)
@@ -33,6 +33,18 @@ def get_llm_provider() -> BaseLLMProvider:
     from app.providers.llm_openai import OpenAILLMProvider
 
     return OpenAILLMProvider(api_key=settings.openai_api_key)
+
+
+@lru_cache(maxsize=1)
+def get_embedding_provider() -> BaseEmbeddingProvider:
+    """Return the configured embedding provider instance.
+
+    Default: OpenAIEmbeddingProvider (text-embedding-3-small)
+    Future: FastEmbedProvider (local, air-gapped)
+    """
+    from app.providers.embedding_openai import OpenAIEmbeddingProvider
+
+    return OpenAIEmbeddingProvider(api_key=settings.openai_api_key)
 
 
 def get_output_provider(output_format: str = "SQL") -> BaseOutputProvider:

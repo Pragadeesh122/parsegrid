@@ -19,6 +19,8 @@ const STATUS_CONFIG: Record<
 > = {
   UPLOADED: { label: "Uploaded", phase: 0 },
   OCR_PROCESSING: { label: "Processing document", phase: 1 },
+  INDEXING: { label: "Indexing document", phase: 1 },
+  AWAITING_QUERY: { label: "Ready for your query", phase: 2 },
   SCHEMA_PROPOSED: { label: "Schema ready for review", phase: 2 },
   AWAITING_REVIEW: { label: "Awaiting your review", phase: 2 },
   SCHEMA_LOCKED: { label: "Schema locked", phase: 2 },

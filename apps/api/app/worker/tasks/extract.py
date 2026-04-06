@@ -69,26 +69,47 @@ def run_extraction(self, job_id: str):
         publish_status(job_id, "EXTRACTING", 0.0)
         update_job(job_id, status="EXTRACTING", progress=0.0)
 
-        # 1. Load parsed text from S3
-        from app.core.storage import get_s3_client
-
-        s3 = get_s3_client()
-        parsed_key = f"parsed/{job_id}/full_text.txt"
-        response = s3.get_object(Bucket=settings.s3_bucket, Key=parsed_key)
-        full_text = response["Body"].read().decode("utf-8")
-
-        # 2. Load locked schema from DB via shared engine
-        job = get_job_field(job_id, "locked_schema")
+        # 1. Load locked schema and job_type from DB
+        job = get_job_field(job_id, "locked_schema", "job_type", "target_chunks")
         locked_schema = job["locked_schema"]
         if isinstance(locked_schema, str):
             locked_schema = json.loads(locked_schema)
 
-        # 3. Chunk text
-        from app.services.extraction import chunk_text
+        job_type = job["job_type"]
+        target_chunks_raw = job["target_chunks"]
 
-        chunks = chunk_text(full_text, chunk_size=3000, overlap=500)
+        # 2. Build chunks based on job_type
+        if job_type == "TARGETED" and target_chunks_raw:
+            # Targeted mode: use only the retrieved RAG chunks
+            if isinstance(target_chunks_raw, str):
+                target_chunks_raw = json.loads(target_chunks_raw)
 
-        logger.info(f"Job {job_id}: {len(chunks)} chunks created, starting parallel extraction")
+            chunks = [
+                {
+                    "chunk_index": i,
+                    "text": chunk["text"],
+                    "start_char": 0,
+                    "end_char": len(chunk["text"]),
+                }
+                for i, chunk in enumerate(target_chunks_raw)
+            ]
+            logger.info(f"Job {job_id}: TARGETED mode — {len(chunks)} retrieved chunks")
+
+        else:
+            # Full mode: load entire document from S3 and chunk
+            from app.core.storage import get_s3_client
+
+            s3 = get_s3_client()
+            parsed_key = f"parsed/{job_id}/full_text.txt"
+            response = s3.get_object(Bucket=settings.s3_bucket, Key=parsed_key)
+            full_text = response["Body"].read().decode("utf-8")
+
+            from app.services.extraction import chunk_text
+
+            chunks = chunk_text(full_text, chunk_size=3000, overlap=500)
+            logger.info(f"Job {job_id}: FULL mode — {len(chunks)} chunks created")
+
+        logger.info(f"Job {job_id}: starting parallel extraction")
 
         publish_status(job_id, "EXTRACTING", 10.0)
 

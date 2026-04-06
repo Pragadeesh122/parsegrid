@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.worker.tasks.extract",
         "app.worker.tasks.merge",
         "app.worker.tasks.translate",
+        "app.worker.tasks.rag",
     ],
 )
 
@@ -37,6 +38,7 @@ celery_app.conf.update(
         "app.worker.tasks.extract.*": {"queue": "extraction"},
         "app.worker.tasks.merge.*": {"queue": "merge"},
         "app.worker.tasks.translate.*": {"queue": "translation"},
+        "app.worker.tasks.rag.*": {"queue": "ocr"},
     },
     # Task limits
     task_time_limit=600,  # 10 min hard limit

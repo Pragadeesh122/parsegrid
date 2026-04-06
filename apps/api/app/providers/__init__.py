@@ -161,6 +161,50 @@ class BaseLLMProvider(ABC):
 
 
 # ============================================================================
+# Embedding Provider Interface
+# ============================================================================
+
+
+class BaseEmbeddingProvider(ABC):
+    """Abstract interface for embedding providers.
+
+    Implementations:
+    - OpenAIEmbeddingProvider (default, cloud, text-embedding-3-small)
+    - Future: FastEmbedProvider (local, air-gapped)
+    """
+
+    @abstractmethod
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of text strings into vectors.
+
+        Args:
+            texts: List of text strings to embed.
+
+        Returns:
+            List of embedding vectors (each a list of floats).
+        """
+        ...
+
+    @abstractmethod
+    def embed_query(self, query: str) -> list[float]:
+        """Embed a single query string.
+
+        Args:
+            query: The query text to embed.
+
+        Returns:
+            Embedding vector as a list of floats.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def dimension(self) -> int:
+        """Return the dimensionality of the embedding vectors."""
+        ...
+
+
+# ============================================================================
 # Output Provider Interface
 # ============================================================================
 

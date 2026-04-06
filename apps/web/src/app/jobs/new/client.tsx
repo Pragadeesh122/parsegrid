@@ -21,6 +21,7 @@ export function NewJobClient({ token }: NewJobClientProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [outputFormat, setOutputFormat] = useState("SQL");
+  const [jobType, setJobType] = useState<"FULL" | "TARGETED">("FULL");
   const [error, setError] = useState<string | null>(null);
 
   const handleFileSelected = (file: File) => {
@@ -58,6 +59,7 @@ export function NewJobClient({ token }: NewJobClientProps) {
           file_key,
           file_size: selectedFile.size,
           output_format: outputFormat,
+          job_type: jobType,
         }),
       });
 
@@ -160,6 +162,53 @@ export function NewJobClient({ token }: NewJobClientProps) {
               </button>
             </div>
           )}
+
+          {/* Extraction Mode */}
+          <div className="space-y-3">
+            <label className="text-sm text-zinc-400">Extraction Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setJobType("FULL")}
+                className={`rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
+                  jobType === "FULL"
+                    ? "border-emerald-600 bg-emerald-600/10"
+                    : "border-zinc-800 hover:border-zinc-700"
+                }`}
+              >
+                <span
+                  className={`text-sm font-medium ${
+                    jobType === "FULL" ? "text-emerald-400" : "text-zinc-300"
+                  }`}
+                >
+                  Full Extraction
+                </span>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Process entire document. AI discovers schema automatically.
+                </p>
+              </button>
+              <button
+                onClick={() => setJobType("TARGETED")}
+                className={`rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
+                  jobType === "TARGETED"
+                    ? "border-emerald-600 bg-emerald-600/10"
+                    : "border-zinc-800 hover:border-zinc-700"
+                }`}
+              >
+                <span
+                  className={`text-sm font-medium ${
+                    jobType === "TARGETED"
+                      ? "text-emerald-400"
+                      : "text-zinc-300"
+                  }`}
+                >
+                  Targeted Extraction
+                </span>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Ask a question. Only relevant sections are extracted.
+                </p>
+              </button>
+            </div>
+          </div>
 
           {/* Output Format */}
           <div className="space-y-3">

@@ -92,6 +92,8 @@ async function request<T>(
 
 // ---- Type Definitions ----
 
+export type JobType = "FULL" | "TARGETED";
+
 export interface Job {
   id: string;
   user_id: string;
@@ -99,6 +101,7 @@ export interface Job {
   file_key: string;
   file_size: number;
   status: string;
+  job_type: JobType;
   output_format: string;
   progress: number;
   proposed_schema: Record<string, unknown> | null;
@@ -156,6 +159,7 @@ export const api = {
       file_key: string;
       file_size: number;
       output_format?: string;
+      job_type?: JobType;
     },
     token: string,
   ) =>
@@ -202,6 +206,13 @@ export const api = {
 
   getDataPreview: (id: string, token: string) =>
     request<DataPreviewResponse>(`/api/v1/jobs/${id}/data-preview`, {
+      token,
+    }),
+
+  targetQuery: (id: string, query: string, token: string) =>
+    request<Job>(`/api/v1/jobs/${id}/target-query`, {
+      method: "POST",
+      body: { query },
       token,
     }),
 

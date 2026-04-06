@@ -41,7 +41,8 @@ export default function JobDetailClient({
     job.status !== "COMPLETED" &&
     job.status !== "FAILED" &&
     job.status !== "SCHEMA_PROPOSED" &&
-    job.status !== "AWAITING_REVIEW";
+    job.status !== "AWAITING_REVIEW" &&
+    job.status !== "AWAITING_QUERY";
 
   useSSE({
     jobId,
@@ -60,7 +61,12 @@ export default function JobDetailClient({
           : prev,
       );
 
-      if (data.status === "COMPLETED" || data.status === "FAILED") {
+      if (
+        data.status === "COMPLETED" ||
+        data.status === "FAILED" ||
+        data.status === "AWAITING_QUERY" ||
+        data.status === "SCHEMA_PROPOSED"
+      ) {
         queryClient.invalidateQueries({ queryKey: ["job", jobId] });
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
       }
@@ -217,6 +223,12 @@ export default function JobDetailClient({
               Details
             </h3>
             <dl className="mt-4 grid grid-cols-2 gap-6 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-zinc-500">Mode</dt>
+                <dd className="mt-1 font-medium text-zinc-200">
+                  {job.job_type === "TARGETED" ? "Targeted" : "Full"}
+                </dd>
+              </div>
               <div>
                 <dt className="text-zinc-500">Format</dt>
                 <dd className="mt-1 font-medium text-zinc-200">

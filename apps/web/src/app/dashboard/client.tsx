@@ -131,6 +131,7 @@ export function DashboardClient({ token }: DashboardClientProps) {
                   <thead>
                     <tr className="border-b border-zinc-800/60 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
                       <th className="px-5 py-3">Document</th>
+                      <th className="px-5 py-3 hidden lg:table-cell">Type</th>
                       <th className="px-5 py-3">Status</th>
                       <th className="px-5 py-3 hidden sm:table-cell">
                         Progress
@@ -171,6 +172,19 @@ export function DashboardClient({ token }: DashboardClientProps) {
                               {job.filename}
                             </span>
                           </Link>
+                        </td>
+                        <td className="px-5 py-3.5 hidden lg:table-cell">
+                          <span
+                            className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-medium ${
+                              job.job_type === "TARGETED"
+                                ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
+                                : "border-zinc-700/60 bg-zinc-800/60 text-zinc-400"
+                            }`}
+                          >
+                            {job.job_type === "TARGETED"
+                              ? "Targeted"
+                              : "Full"}
+                          </span>
                         </td>
                         <td className="px-5 py-3.5">
                           <StatusBadge status={job.status} />

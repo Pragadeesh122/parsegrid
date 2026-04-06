@@ -36,9 +36,10 @@ def process_document(self, job_id: str):
         update_job(job_id, status="OCR_PROCESSING", progress=5.0)
 
         # 1. Get job details from DB
-        job = get_job_field(job_id, "file_key", "filename")
+        job = get_job_field(job_id, "file_key", "filename", "job_type")
         file_key = job["file_key"]
         filename = job["filename"]
+        job_type = job["job_type"]
 
         publish_status(job_id, "OCR_PROCESSING", 10.0)
 
@@ -99,31 +100,45 @@ def process_document(self, job_id: str):
 
             publish_status(job_id, "OCR_PROCESSING", 70.0)
 
-            # 5. Generate schema proposal using LLM
-            from app.providers.factory import get_llm_provider
+            # 5. Branch based on job_type
+            if job_type == "TARGETED":
+                # Targeted pipeline: skip schema generation, go to indexing
+                update_job(
+                    job_id,
+                    status="OCR_PROCESSING",
+                    progress=75.0,
+                    page_count=ocr_result.page_count,
+                )
+                publish_status(job_id, "OCR_PROCESSING", 75.0)
 
-            llm = get_llm_provider()
+                from app.worker.tasks.rag import index_document
 
-            # Sample the first few pages for schema discovery
-            sample_text = "\n\n".join(
-                p.full_text for p in ocr_result.pages[:5]
-            )
-            proposed_schema = llm.generate_schema(sample_text, ocr_result.page_count)
+                index_document.apply_async(args=[job_id])
+                logger.info(f"Job {job_id}: OCR complete, dispatched indexing (TARGETED)")
 
-            publish_status(job_id, "SCHEMA_PROPOSED", 90.0)
+            else:
+                # Full pipeline: generate schema proposal
+                from app.providers.factory import get_llm_provider
 
-            # 6. Update job with results
-            update_job(
-                job_id,
-                status="SCHEMA_PROPOSED",
-                progress=100.0,
-                page_count=ocr_result.page_count,
-                proposed_schema=json.dumps(proposed_schema),
-            )
+                llm = get_llm_provider()
 
-            publish_status(job_id, "SCHEMA_PROPOSED", 100.0)
+                sample_text = "\n\n".join(
+                    p.full_text for p in ocr_result.pages[:5]
+                )
+                proposed_schema = llm.generate_schema(sample_text, ocr_result.page_count)
 
-        logger.info(f"Job {job_id}: OCR + schema proposal complete")
+                publish_status(job_id, "SCHEMA_PROPOSED", 90.0)
+
+                update_job(
+                    job_id,
+                    status="SCHEMA_PROPOSED",
+                    progress=100.0,
+                    page_count=ocr_result.page_count,
+                    proposed_schema=json.dumps(proposed_schema),
+                )
+
+                publish_status(job_id, "SCHEMA_PROPOSED", 100.0)
+                logger.info(f"Job {job_id}: OCR + schema proposal complete (FULL)")
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: OCR failed: {exc}")

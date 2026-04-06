@@ -6,9 +6,10 @@ Represents an extraction job lifecycle from upload to completion.
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, Integer, String, Text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
 
@@ -18,6 +19,8 @@ class JobStatus(str, enum.Enum):
 
     UPLOADED = "UPLOADED"
     OCR_PROCESSING = "OCR_PROCESSING"
+    INDEXING = "INDEXING"
+    AWAITING_QUERY = "AWAITING_QUERY"
     SCHEMA_PROPOSED = "SCHEMA_PROPOSED"
     AWAITING_REVIEW = "AWAITING_REVIEW"
     SCHEMA_LOCKED = "SCHEMA_LOCKED"
@@ -27,6 +30,13 @@ class JobStatus(str, enum.Enum):
     PROVISIONING = "PROVISIONING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+
+
+class JobType(str, enum.Enum):
+    """Extraction mode: full document vs targeted RAG."""
+
+    FULL = "FULL"
+    TARGETED = "TARGETED"
 
 
 class OutputFormat(str, enum.Enum):
@@ -72,6 +82,11 @@ class Job(Base, TimestampMixin):
         nullable=False,
         default=JobStatus.UPLOADED,
         index=True,
+    )
+    job_type: Mapped[JobType] = mapped_column(
+        Enum(JobType, name="job_type", create_constraint=True),
+        nullable=False,
+        default=JobType.FULL,
     )
     output_format: Mapped[OutputFormat] = mapped_column(
         Enum(OutputFormat, name="output_format", create_constraint=True),
@@ -133,6 +148,56 @@ class Job(Base, TimestampMixin):
         nullable=True,
         comment="Generated DDL stored for audit trail",
     )
+    target_chunks: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Retrieved chunk texts for targeted extraction",
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Job(id={self.id!r}, status={self.status!r}, filename={self.filename!r})>"
+
+
+class DocumentChunk(Base):
+    """Vector-indexed document chunk for RAG-based targeted extraction."""
+
+    __tablename__ = "document_chunks"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=generate_uuid,
+    )
+    job_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    page_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    chunk_text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(3072),
+        nullable=True,
+        comment="3072-dim vector from text-embedding-3-large",
+    )
+
+    job: Mapped["Job"] = relationship(back_populates="chunks")
+
+    def __repr__(self) -> str:
+        return f"<DocumentChunk(id={self.id!r}, job_id={self.job_id!r}, chunk_index={self.chunk_index})>"

@@ -8,6 +8,8 @@
 const BADGE_STYLES: Record<string, string> = {
   UPLOADED: "bg-zinc-800/60 text-zinc-400 border-zinc-700/60",
   OCR_PROCESSING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  INDEXING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  AWAITING_QUERY: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   SCHEMA_PROPOSED: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   AWAITING_REVIEW: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   SCHEMA_LOCKED: "bg-zinc-800/60 text-zinc-300 border-zinc-700/60",
@@ -22,6 +24,8 @@ const BADGE_STYLES: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   UPLOADED: "Uploaded",
   OCR_PROCESSING: "Processing",
+  INDEXING: "Indexing",
+  AWAITING_QUERY: "Awaiting Query",
   SCHEMA_PROPOSED: "Review Schema",
   AWAITING_REVIEW: "Review Schema",
   SCHEMA_LOCKED: "Locked",
