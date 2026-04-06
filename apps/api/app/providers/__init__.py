@@ -262,3 +262,8 @@ class BaseOutputProvider(ABC):
             ProvisionResult with connection string, row count, etc.
         """
         ...
+
+    @abstractmethod
+    def delete_output(self, schema_name: str) -> None:
+        """Delete all provisioned output for a job."""
+        ...

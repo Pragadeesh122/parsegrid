@@ -94,6 +94,18 @@ class PostgresOutputProvider(BaseOutputProvider):
             ddl_executed=ddl,
         )
 
+    def delete_output(self, schema_name: str) -> None:
+        """Drop a provisioned schema and all of its objects."""
+        engine = create_engine(_get_sync_url())
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+                conn.commit()
+                logger.info(f"Dropped provisioned schema: {schema_name}")
+        finally:
+            engine.dispose()
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers

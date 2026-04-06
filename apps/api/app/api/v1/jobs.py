@@ -7,8 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
+from app.core.storage import delete_object_from_s3, delete_prefix_from_s3
 from app.core.security import TokenPayload
 from app.models.job import Job, JobStatus
+from app.providers.factory import get_output_provider
 from app.schemas.job import (
     DataPreviewResponse,
     JobCreateRequest,
@@ -20,6 +22,14 @@ from app.schemas.job import (
 )
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
+
+DELETABLE_JOB_STATUSES = {
+    JobStatus.SCHEMA_PROPOSED,
+    JobStatus.AWAITING_REVIEW,
+    JobStatus.AWAITING_QUERY,
+    JobStatus.COMPLETED,
+    JobStatus.FAILED,
+}
 
 
 @router.post(
@@ -102,6 +112,49 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a job and all persisted artifacts",
+)
+async def delete_job(
+    job_id: str,
+    user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """Delete a completed or idle job and all persisted artifacts."""
+    query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status not in DELETABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot delete a job while it is processing ({job.status}). "
+                "Wait for it to finish or fail first."
+            ),
+        )
+
+    delete_object_from_s3(job.file_key)
+    delete_prefix_from_s3(f"parsed/{job_id}/")
+    delete_prefix_from_s3(f"extracted/{job_id}/")
+
+    output_format = (
+        job.output_format.value
+        if hasattr(job.output_format, "value")
+        else str(job.output_format)
+    )
+    if job.output_schema_name and output_format == "SQL":
+        provider = get_output_provider(output_format)
+        provider.delete_output(job.output_schema_name)
+
+    await db.delete(job)
+    await db.commit()
 
 
 @router.get(

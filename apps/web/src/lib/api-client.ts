@@ -87,6 +87,10 @@ async function request<T>(
     );
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }
 
@@ -177,6 +181,12 @@ export const api = {
 
   getJob: (id: string, token: string) =>
     request<Job>(`/api/v1/jobs/${id}`, { token }),
+
+  deleteJob: (id: string, token: string) =>
+    request<void>(`/api/v1/jobs/${id}`, {
+      method: "DELETE",
+      token,
+    }),
 
   getJobStatus: (id: string, token: string) =>
     request<{

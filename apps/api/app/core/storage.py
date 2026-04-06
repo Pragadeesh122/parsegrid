@@ -8,6 +8,7 @@ Switching environments requires ONLY changing env vars — zero code changes.
 """
 
 import boto3
+from botocore.exceptions import ClientError
 from botocore.config import Config as BotoConfig
 
 from app.core.config import settings
@@ -79,3 +80,35 @@ def upload_file_to_s3(
         Body=file_bytes,
         ContentType=content_type,
     )
+
+
+def delete_object_from_s3(object_key: str) -> None:
+    """Delete a single object from S3/MinIO if it exists."""
+    client = get_s3_client()
+    try:
+        client.delete_object(Bucket=settings.s3_bucket, Key=object_key)
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code not in {"NoSuchKey", "404"}:
+            raise
+
+
+def delete_prefix_from_s3(prefix: str) -> int:
+    """Delete all objects under a prefix. Returns the number deleted."""
+    client = get_s3_client()
+    paginator = client.get_paginator("list_objects_v2")
+    deleted = 0
+
+    for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix=prefix):
+        contents = page.get("Contents", [])
+        if not contents:
+            continue
+
+        objects = [{"Key": obj["Key"]} for obj in contents]
+        client.delete_objects(
+            Bucket=settings.s3_bucket,
+            Delete={"Objects": objects, "Quiet": True},
+        )
+        deleted += len(objects)
+
+    return deleted

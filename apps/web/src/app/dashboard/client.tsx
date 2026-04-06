@@ -5,10 +5,12 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { TrashIcon } from "@phosphor-icons/react/dist/ssr/Trash";
 import Link from "next/link";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/job-status/status-badge";
-import { useJobs } from "@/hooks/use-jobs";
+import { useDeleteJob, useJobs } from "@/hooks/use-jobs";
 import { AppShell } from "@/components/app-shell";
 
 interface DashboardClientProps {
@@ -22,7 +24,42 @@ interface DashboardClientProps {
 
 export function DashboardClient({ token }: DashboardClientProps) {
   const { data, isLoading: loading } = useJobs(token ?? "");
-  const jobs = data?.jobs ?? [];
+  const deleteJobMutation = useDeleteJob(token ?? "");
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<{
+    id: string;
+    filename: string;
+  } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const jobs = useMemo(() => data?.jobs ?? [], [data?.jobs]);
+
+  const openDeleteDialog = (jobId: string, filename: string) => {
+    setDeleteCandidate({id: jobId, filename});
+    setDeleteError(null);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteJobMutation.isPending) return;
+    setDeleteCandidate(null);
+    setDeleteError(null);
+  };
+
+  const handleDeleteJob = async () => {
+    if (!deleteCandidate) return;
+
+    setDeletingJobId(deleteCandidate.id);
+    setDeleteError(null);
+    try {
+      await deleteJobMutation.mutateAsync(deleteCandidate.id);
+      setDeleteCandidate(null);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Failed to delete job",
+      );
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
 
   const stats = useMemo(() => {
     const total = jobs.length;
@@ -139,7 +176,7 @@ export function DashboardClient({ token }: DashboardClientProps) {
                       <th className="px-5 py-3 hidden md:table-cell">
                         Created
                       </th>
-                      <th className="px-5 py-3 w-12" />
+                      <th className="px-5 py-3 w-28 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/40">
@@ -222,24 +259,40 @@ export function DashboardClient({ token }: DashboardClientProps) {
                           </span>
                         </td>
                         <td className="px-5 py-3.5">
-                          <Link
-                            href={`/jobs/${job.id}`}
-                            className="text-zinc-600 transition-colors hover:text-zinc-300"
-                          >
-                            <svg
-                              className="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                              strokeWidth={1.5}
+                          <div className="flex items-center justify-end gap-4">
+                            <button
+                              type="button"
+                              onClick={() => openDeleteDialog(job.id, job.filename)}
+                              disabled={deleteJobMutation.isPending}
+                              aria-label={`Delete ${job.filename}`}
+                              title="Delete job"
+                              className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M8.25 4.5l7.5 7.5-7.5 7.5"
-                              />
-                            </svg>
-                          </Link>
+                              {deletingJobId === job.id ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                              ) : (
+                                <TrashIcon className="h-4 w-4" />
+                              )}
+                            </button>
+                            <Link
+                              href={`/jobs/${job.id}`}
+                              className="text-zinc-600 transition-colors hover:text-zinc-300"
+                            >
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={1.5}
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M8.25 4.5l7.5 7.5-7.5 7.5"
+                                />
+                              </svg>
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -250,6 +303,21 @@ export function DashboardClient({ token }: DashboardClientProps) {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={!!deleteCandidate}
+        title="Delete job permanently?"
+        description={
+          deleteCandidate
+            ? `"${deleteCandidate.filename}" will be removed along with its uploaded file, parsed artifacts, extracted data, and provisioned output. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete Job"
+        confirmIcon={<TrashIcon className="h-5 w-5" weight="duotone" />}
+        isPending={deleteJobMutation.isPending}
+        errorMessage={deleteError}
+        onConfirm={handleDeleteJob}
+        onClose={closeDeleteDialog}
+      />
     </AppShell>
   );
 }

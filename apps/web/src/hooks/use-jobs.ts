@@ -75,3 +75,28 @@ export function useApproveSchema(token: string) {
     },
   });
 }
+
+export function useDeleteJob(token: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => api.deleteJob(jobId, token),
+    onSuccess: (_, jobId) => {
+      queryClient.removeQueries({queryKey: ["job", jobId]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}
+
+export function useTargetQuery(token: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({jobId, query}: {jobId: string; query: string}) =>
+      api.targetQuery(jobId, query, token),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({queryKey: ["job", data.id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}

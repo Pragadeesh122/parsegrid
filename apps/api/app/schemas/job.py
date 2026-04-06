@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.job import JobStatus, OutputFormat
+from app.models.job import JobStatus, JobType, OutputFormat
 
 # --- Request Schemas ---
 
@@ -16,12 +16,19 @@ class JobCreateRequest(BaseModel):
     file_key: str = Field(..., min_length=1, max_length=1024, description="S3 object key")
     file_size: int = Field(..., gt=0)
     output_format: OutputFormat = OutputFormat.SQL
+    job_type: JobType = JobType.FULL
 
 
 class SchemaApprovalRequest(BaseModel):
     """Request body for approving/editing a proposed schema."""
 
     locked_schema: dict = Field(..., description="User-approved JSON schema")
+
+
+class TargetQueryRequest(BaseModel):
+    """Request body for submitting a natural language query for targeted extraction."""
+
+    query: str = Field(..., min_length=1, max_length=2000, description="Natural language extraction query")
 
 
 # --- Response Schemas ---
@@ -38,6 +45,7 @@ class JobResponse(BaseModel):
     file_key: str
     file_size: int
     status: JobStatus
+    job_type: JobType
     output_format: OutputFormat
     progress: float
     proposed_schema: dict | None = None

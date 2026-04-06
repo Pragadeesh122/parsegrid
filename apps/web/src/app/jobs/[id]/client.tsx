@@ -9,14 +9,22 @@
 "use client";
 
 import { useState } from "react";
+import { TrashIcon } from "@phosphor-icons/react/dist/ssr/Trash";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProgressBar } from "@/components/job-status/progress-bar";
 import { SchemaForm } from "@/components/schema-editor/schema-form";
 import { ConnectionString } from "@/components/connection/conn-string";
 import { DataPreview } from "@/components/data-preview/data-table";
-import { useJob, useApproveSchema } from "@/hooks/use-jobs";
+import {
+  useApproveSchema,
+  useDeleteJob,
+  useJob,
+  useTargetQuery,
+} from "@/hooks/use-jobs";
 import { useSSE } from "@/hooks/use-sse";
 
 export default function JobDetailClient({
@@ -26,6 +34,7 @@ export default function JobDetailClient({
   jobId: string;
   token: string | null;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const {
     data: job,
@@ -33,7 +42,13 @@ export default function JobDetailClient({
     error: queryError,
   } = useJob(jobId, token ?? "");
   const approveMutation = useApproveSchema(token ?? "");
+  const deleteJobMutation = useDeleteJob(token ?? "");
+  const targetQueryMutation = useTargetQuery(token ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [targetQuery, setTargetQuery] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // SSE overlay — merges live progress into the cached query data
   const isProcessing =
@@ -112,6 +127,46 @@ export default function JobDetailClient({
     }
   };
 
+  const handleTargetQuery = async () => {
+    if (!targetQuery.trim()) return;
+
+    try {
+      await targetQueryMutation.mutateAsync({
+        jobId,
+        query: targetQuery,
+      });
+    } catch (e) {
+      console.error("Target query failed:", e);
+    }
+  };
+
+  const handleDeleteJob = async () => {
+    if (!job) return;
+
+    setDeleteError(null);
+    setIsDeleting(true);
+    try {
+      await deleteJobMutation.mutateAsync(job.id);
+      router.push("/dashboard");
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Failed to delete job",
+      );
+      setIsDeleting(false);
+    }
+  };
+
+  const openDeleteDialog = () => {
+    setDeleteError(null);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteJobMutation.isPending) return;
+    setDeleteDialogOpen(false);
+    setDeleteError(null);
+  };
+
   const error = queryError ? (queryError as Error).message : null;
 
   if (loading) {
@@ -172,11 +227,27 @@ export default function JobDetailClient({
         </div>
 
         {/* Header */}
-        <div className="mt-4">
-          <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
-            {job.filename}
-          </h1>
-          <p className="mt-0.5 text-xs font-mono text-zinc-600">{job.id}</p>
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
+              {job.filename}
+            </h1>
+            <p className="mt-0.5 text-xs font-mono text-zinc-600">{job.id}</p>
+          </div>
+          <button
+            type="button"
+            onClick={openDeleteDialog}
+            disabled={isDeleting || deleteJobMutation.isPending}
+            aria-label={`Delete ${job.filename}`}
+            title="Delete job"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 transition-colors hover:border-red-500/30 hover:bg-red-500/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isDeleting ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-300 border-t-transparent" />
+            ) : (
+              <TrashIcon className="h-4 w-4" />
+            )}
+          </button>
         </div>
 
         <div className="mt-8 max-w-5xl space-y-8">
@@ -188,6 +259,39 @@ export default function JobDetailClient({
               errorMessage={job.error_message}
             />
           </div>
+
+          {/* Targeted Query Input */}
+          {job.status === "AWAITING_QUERY" && (
+            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-6">
+              <h3 className="text-sm font-semibold text-zinc-200">
+                Document Indexed
+              </h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                Your document has been indexed. What specific data would you
+                like to extract?
+              </p>
+              <div className="mt-4 flex gap-3">
+                <input
+                  type="text"
+                  value={targetQuery}
+                  onChange={(e) => setTargetQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !targetQueryMutation.isPending)
+                      handleTargetQuery();
+                  }}
+                  placeholder="e.g., Find all invoice totals and dates"
+                  className="flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition-colors focus:border-emerald-600"
+                />
+                <button
+                  onClick={handleTargetQuery}
+                  disabled={!targetQuery.trim() || targetQueryMutation.isPending}
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {targetQueryMutation.isPending ? "Searching..." : "Extract"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Schema Editor */}
           {(job.status === "SCHEMA_PROPOSED" ||
@@ -259,6 +363,17 @@ export default function JobDetailClient({
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete job permanently?"
+        description={`"${job.filename}" will be removed along with its uploaded file, parsed artifacts, extracted data, and provisioned output. This cannot be undone.`}
+        confirmLabel="Delete Job"
+        confirmIcon={<TrashIcon className="h-5 w-5" weight="duotone" />}
+        isPending={deleteJobMutation.isPending}
+        errorMessage={deleteError}
+        onConfirm={handleDeleteJob}
+        onClose={closeDeleteDialog}
+      />
     </AppShell>
   );
 }
