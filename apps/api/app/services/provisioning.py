@@ -1,31 +1,31 @@
-"""ParseGrid — Database provisioning service.
+"""ParseGrid — Database provisioning service (Phase 7).
 
-Delegates to the appropriate output provider based on the job's output_format.
-This module is the entry point called by the translate Celery task.
+Thin wrapper that delegates to the configured output provider. Phase 7
+passes the locked DatabaseModel and a `dict[table_name, rows]` payload
+through unchanged — the provider does FK-aware ordering and inserts.
 """
+
+from __future__ import annotations
+
+from typing import Any
 
 from app.providers import ProvisionResult
 from app.providers.factory import get_output_provider
+from app.schemas.extraction_model import DatabaseModel
 
 
 def provision_and_insert(
     schema_name: str,
-    ddl_statements: str,
-    data: dict | list,
-    json_schema: dict,
+    ddl_statements: list[str],
+    data: dict[str, list[dict[str, Any]]],
+    model: DatabaseModel,
     output_format: str = "SQL",
 ) -> ProvisionResult:
-    """Create schema, execute DDL, bulk insert data via the output provider.
-
-    Args:
-        schema_name: Isolated schema/namespace name (e.g., job_{uuid}).
-        ddl_statements: DDL string from the Translator Agent.
-        data: The merged extraction data.
-        json_schema: The locked JSON schema (for table name inference).
-        output_format: "SQL", "GRAPH", or "VECTOR".
-
-    Returns:
-        ProvisionResult with connection_string, rows_inserted, schema_name, ddl_executed.
-    """
+    """Create schema, run DDL, and insert rows in FK dependency order."""
     provider = get_output_provider(output_format)
-    return provider.provision(schema_name, ddl_statements, data, json_schema)
+    return provider.provision(
+        schema_name=schema_name,
+        ddl_statements=ddl_statements,
+        data=data,
+        model=model,
+    )

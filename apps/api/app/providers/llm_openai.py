@@ -1,251 +1,288 @@
-"""ParseGrid — OpenAI LLM Provider.
+"""ParseGrid — OpenAI LLM Provider (Phase 7).
 
-Uses OpenAI API with Structured Outputs (strict: true) via the
-`client.beta.chat.completions.parse()` method for guaranteed schema compliance.
+Two responsibilities:
 
-Models:
-- gpt-4o: Schema discovery (higher reasoning for complex structures)
-- gpt-4o-mini: Bulk extraction (10-20x cheaper, sufficient for locked schemas)
+1. `generate_model` — discover a typed `DatabaseModel` from sampled document
+   text using `client.beta.chat.completions.parse(response_format=DatabaseModel)`.
+   The Pydantic schema is enforced server-side by OpenAI strict structured
+   outputs, so the response cannot contain arbitrary JSON keys.
+
+2. `extract_table` — extract rows for a single `TableDef` from a chunk of
+   text. A per-table Pydantic model is built dynamically at request time so
+   each call is also strict-mode.
+
+DDL generation has been removed entirely (Phase 7) — see `app/services/ddl.py`
+for the deterministic Python generator that replaces it.
 """
 
-import json
 import logging
 from typing import Any
 
 from openai import OpenAI
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.core.config import settings
 from app.providers import BaseLLMProvider, LLMResponse
+from app.schemas.extraction_model import (
+    ColumnDef,
+    DatabaseModel,
+    DocumentProfile,
+    RelationshipDef,
+    TableDef,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _json_schema_to_pydantic(schema: dict) -> type[BaseModel]:
-    """Dynamically create a Pydantic model from a JSON schema.
+# ---------------------------------------------------------------------------
+# Per-table dynamic Pydantic models
+# ---------------------------------------------------------------------------
 
-    This enables OpenAI's strict structured outputs on user-defined schemas.
+_PY_TYPE_MAP: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "float": float,
+    "boolean": bool,
+    "date": str,  # ISO 8601 string; reconciliation normalizes to a real date
+}
+
+
+def _table_def_to_pydantic(
+    table: TableDef, link_targets: list[RelationshipDef]
+) -> type[BaseModel]:
+    """Build a strict Pydantic model for a single TableDef.
+
+    The resulting model has one field per declared column, plus one extra
+    nullable string field for every link target's `source_column`. The
+    link-key fields hold the *natural* key value of the referenced parent —
+    never a synthetic id — so reconciliation can resolve FKs deterministically.
     """
     fields: dict[str, Any] = {}
-    properties = schema.get("properties", {})
-    required = set(schema.get("required", []))
 
-    type_map = {
-        "string": str,
-        "integer": int,
-        "number": float,
-        "boolean": bool,
-    }
+    for col in table.columns:
+        py_type = _PY_TYPE_MAP.get(col.type, str)
+        # All extracted fields are nullable: missing data should be null,
+        # not a refusal or fabricated value.
+        fields[col.name] = (py_type | None, Field(default=None, description=col.description))
 
-    for field_name, field_def in properties.items():
-        field_type_str = field_def.get("type", "string")
+    declared_names = {c.name for c in table.columns}
+    for rel in link_targets:
+        if not rel.enabled:
+            continue
+        if rel.source_column in declared_names:
+            # Column already declared on the table; no extra link field needed.
+            continue
+        fields[rel.source_column] = (
+            str | None,
+            Field(
+                default=None,
+                description=(
+                    f"Foreign key value linking to {rel.references_table}."
+                    f"{rel.references_column} (natural key, never an id)."
+                ),
+            ),
+        )
 
-        if field_type_str == "array":
-            item_type_str = field_def.get("items", {}).get("type", "string")
-            inner_type = type_map.get(item_type_str, str)
-            field_type = list[inner_type]  # type: ignore[valid-type]
-        elif field_type_str == "object":
-            # Nested objects become dict
-            field_type = dict[str, Any]
-        else:
-            field_type = type_map.get(field_type_str, str)
+    row_model = create_model(
+        f"Row_{table.table_name}",
+        __config__=ConfigDict(extra="forbid"),
+        **fields,
+    )
 
-        if field_name in required:
-            fields[field_name] = (field_type, ...)
-        else:
-            fields[field_name] = (field_type | None, None)
+    wrapper = create_model(
+        f"Extract_{table.table_name}",
+        __config__=ConfigDict(extra="forbid"),
+        rows=(list[row_model], ...),
+    )
+    return wrapper
 
-    return create_model("DynamicExtractionModel", **fields)
+
+# ---------------------------------------------------------------------------
+# Provider
+# ---------------------------------------------------------------------------
 
 
 class OpenAILLMProvider(BaseLLMProvider):
-    """OpenAI-based LLM provider with structured output enforcement."""
+    """OpenAI-based LLM provider with strict structured-output enforcement."""
 
     def __init__(
         self,
         api_key: str | None = None,
-        schema_model: str = "gpt-4o",
+        discovery_model: str = "gpt-4o",
         extraction_model: str = "gpt-4o-mini",
-        translation_model: str = "gpt-4o-mini",
     ):
         self.client = OpenAI(api_key=api_key or settings.openai_api_key)
-        self.schema_model = schema_model
+        self.discovery_model = discovery_model
         self.extraction_model = extraction_model
-        self.translation_model = translation_model
 
-    def generate_schema(self, sample_text: str, num_pages: int) -> dict:
-        """Analyze sample text and propose a JSON schema for extraction.
+    # ------------------------------------------------------------------
+    # 1. Model discovery
+    # ------------------------------------------------------------------
 
-        Uses gpt-4o for higher reasoning capability on complex documents.
+    def generate_model(
+        self,
+        document_text: str,
+        profile: DocumentProfile | None,
+        num_pages: int,
+    ) -> DatabaseModel:
+        """Propose a typed DatabaseModel from sampled document text.
+
+        Temperature 0.1, gpt-4o by default. The response is parsed against
+        DatabaseModel via OpenAI strict structured outputs, so the return
+        value is guaranteed to validate.
         """
-        system_prompt = """You are a schema discovery agent for ParseGrid.
-Your job is to analyze document text and propose a JSON schema that captures
-the structured data found in the document.
+        system_prompt = """You are a relational data modeller for ParseGrid.
 
-Rules:
-1. Identify EVERY distinct data entity and its fields.
-2. Use appropriate JSON Schema types: string, integer, number, boolean, array.
-3. Mark fields as required if they appear consistently.
-4. Include a description for each field.
-5. If the document contains tabular data, model each row as an object in an array.
-6. Return ONLY valid JSON — no markdown, no explanation.
+You will receive sampled text from a document. Your job is to propose a
+DatabaseModel that captures the structured data found in the document. The
+model has two shapes:
 
-Output format (JSON Schema):
-{
-  "title": "Descriptive name of the data",
-  "type": "object",
-  "properties": {
-    "items": {
-      "type": "array",
-      "description": "Array of extracted records",
-      "items": {
-        "type": "object",
-        "properties": {
-          "field_name": {"type": "string", "description": "..."},
-          ...
-        },
-        "required": ["field_name", ...]
-      }
-    }
-  },
-  "required": ["items"]
-}"""
+- single_table: ONE table that holds repeated records of the same entity
+  (e.g., a batch of identical invoices, a list of transactions).
+- table_graph: MULTIPLE tables linked by foreign keys when the document
+  contains genuinely distinct entities (e.g., a mortgage application with
+  borrowers, properties, employers, transactions).
 
-        user_prompt = f"""Analyze this document text ({num_pages} total pages) and propose a JSON schema.
+Hard rules:
+1. Pick `single_table` whenever the document is one repeated entity. Do NOT
+   invent extra tables in that case.
+2. Only create a table if you can point to multiple instances of that entity
+   in the sampled text. Do NOT invent tables with no evidence.
+3. Use snake_case for every table_name and column name.
+4. Mark exactly the columns that uniquely identify a record as
+   `is_primary_key=true`. These become UNIQUE constraints and FK targets.
+5. For every relationship, the `references_column` MUST be a column that you
+   marked `is_primary_key=true` on the referenced table. FKs reference the
+   user's natural key, never a synthetic id.
+6. `link_basis` is "natural_key" for single-column FKs, "composite_key" when
+   multiple columns are needed (use composite_key_columns), or "manual_only"
+   when the link is implied but not directly extractable.
+7. Every column type must be one of: string, integer, float, boolean, date.
+8. Provide a short, useful description for every table and every column.
+"""
 
---- DOCUMENT TEXT SAMPLE ---
-{sample_text[:8000]}
---- END ---
+        profile_block = ""
+        if profile is not None:
+            profile_block = (
+                f"\n--- DOCUMENT PROFILE ---\n"
+                f"Total pages: {profile.total_pages}\n"
+                f"Sampled pages: {profile.sampled_pages}\n"
+                f"Region histogram: {profile.region_summary}\n"
+                f"Recommended extraction_type: {profile.recommended_extraction_type}\n"
+                f"Rationale: {profile.rationale}\n"
+                f"--- END PROFILE ---\n"
+            )
 
-Return the JSON schema that best captures the structured data in this document."""
+        user_prompt = (
+            f"Propose a DatabaseModel for this document ({num_pages} pages total)."
+            f"{profile_block}"
+            f"\n\n--- SAMPLED DOCUMENT TEXT ---\n"
+            f"{document_text[:16000]}"
+            f"\n--- END ---"
+        )
 
-        response = self.client.chat.completions.create(
-            model=self.schema_model,
+        completion = self.client.beta.chat.completions.parse(
+            model=self.discovery_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            response_format={"type": "json_object"},
+            response_format=DatabaseModel,
             temperature=0.1,
         )
 
-        schema_text = response.choices[0].message.content or "{}"
-        try:
-            return json.loads(schema_text)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse schema response: {schema_text[:200]}")
-            return {"error": "Failed to parse schema", "raw": schema_text[:500]}
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            refusal = completion.choices[0].message.refusal or "no parsed output"
+            raise RuntimeError(f"LLM refused or returned null DatabaseModel: {refusal}")
 
-    def extract_structured(
+        logger.info(
+            f"generate_model: extraction_type={parsed.extraction_type} "
+            f"tables={[t.table_name for t in parsed.tables]} "
+            f"relationships={len(parsed.relationships)}"
+        )
+        return parsed
+
+    # ------------------------------------------------------------------
+    # 2. Per-table extraction
+    # ------------------------------------------------------------------
+
+    def extract_table(
         self,
         text: str,
-        schema: dict,
+        table: TableDef,
+        link_targets: list[RelationshipDef],
     ) -> LLMResponse:
-        """Extract structured data from text using Structured Outputs (strict mode).
+        """Extract rows for a single table from one chunk of text."""
+        wrapper_model = _table_def_to_pydantic(table, link_targets)
 
-        Uses gpt-4o-mini for cost efficiency on locked schemas.
-        """
-        # Build a clear field list from the schema for the prompt
-        items_schema = schema.get("properties", {}).get("items", {})
-        item_props = items_schema.get("items", {}).get("properties", {})
-        if not item_props:
-            # Flat schema fallback
-            item_props = schema.get("properties", {})
+        # Build a human-readable column list for the prompt.
+        col_lines: list[str] = []
+        for col in table.columns:
+            pk_marker = " [PRIMARY KEY]" if col.is_primary_key else ""
+            col_lines.append(f'- "{col.name}" ({col.type}){pk_marker}: {col.description}')
 
-        field_descriptions = []
-        for fname, fdef in item_props.items():
-            ftype = fdef.get("type", "string")
-            fdesc = fdef.get("description", "")
-            field_descriptions.append(f'  - "{fname}" ({ftype}): {fdesc}')
-        fields_text = "\n".join(field_descriptions)
+        link_lines: list[str] = []
+        for rel in link_targets:
+            if not rel.enabled:
+                continue
+            link_lines.append(
+                f'- "{rel.source_column}" → natural-key value of '
+                f"{rel.references_table}.{rel.references_column}"
+            )
 
-        system_prompt = f"""You are a data extraction agent. Extract structured records from text.
+        link_block = ""
+        if link_lines:
+            link_block = (
+                "\n\nThis table also has foreign-key columns. For each row, "
+                "extract the natural-key value of the parent record (e.g., the "
+                "borrower_id, the invoice_number) — never a synthetic id.\n"
+                + "\n".join(link_lines)
+            )
 
-Each record must have these fields:
-{fields_text}
+        system_prompt = (
+            f"You are a data extraction agent for ParseGrid.\n\n"
+            f"Extract every record matching the table `{table.table_name}` "
+            f"({table.description}) from the text below.\n\n"
+            f"Each row must have these fields:\n"
+            + "\n".join(col_lines)
+            + link_block
+            + "\n\nRules:\n"
+            "1. Extract EVERY matching record found in the text.\n"
+            "2. If a field value is not present in the text, set it to null. "
+            "Never fabricate or guess.\n"
+            "3. Return the rows in the order they appear in the text.\n"
+            "4. Only extract data that belongs to this table — ignore unrelated content."
+        )
 
-Return a JSON object with a single key "items" containing an array of extracted records.
-Example output format:
-{{"items": [{{"field1": "value1", "field2": 123}}, ...]}}
-
-Rules:
-1. Extract EVERY matching record found in the text.
-2. If a field value is not found in the text, use null.
-3. Return ONLY the JSON object with "items" array — nothing else."""
-
-        response = self.client.chat.completions.create(
+        completion = self.client.beta.chat.completions.parse(
             model=self.extraction_model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Extract data from this text:\n\n{text}"},
+                {"role": "user", "content": f"Extract rows from this text:\n\n{text}"},
             ],
-            response_format={"type": "json_object"},
+            response_format=wrapper_model,
             temperature=0.0,
         )
 
-        content = response.choices[0].message.content or "{}"
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            data = {"error": "Failed to parse extraction response"}
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            refusal = completion.choices[0].message.refusal or "no parsed output"
+            logger.warning(
+                f"extract_table({table.table_name}): refusal/null parsed: {refusal}"
+            )
+            data: dict[str, Any] = {"rows": []}
+        else:
+            data = parsed.model_dump()
 
+        usage = completion.usage
         return LLMResponse(
             data=data,
             model=self.extraction_model,
             usage={
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                "total_tokens": response.usage.total_tokens if response.usage else 0,
+                "prompt_tokens": usage.prompt_tokens if usage else 0,
+                "completion_tokens": usage.completion_tokens if usage else 0,
+                "total_tokens": usage.total_tokens if usage else 0,
             },
-            raw_response=response,
+            raw_response=completion,
         )
-
-    def generate_ddl(
-        self,
-        schema: dict,
-        target_format: str,
-    ) -> str:
-        """Generate DDL statements for the target database format.
-
-        Uses gpt-4o-mini for SQL/Cypher generation.
-        """
-        format_instructions = {
-            "SQL": """Generate a single PostgreSQL CREATE TABLE statement from this JSON schema.
-Rules:
-- Create exactly ONE flat table — no parent tables, no foreign keys, no joins.
-- The table should hold the items array directly. Each item becomes a row.
-- Add a SERIAL PRIMARY KEY column named 'id'.
-- Use appropriate PostgreSQL types (TEXT, INTEGER, NUMERIC, BOOLEAN, TIMESTAMP).
-- Use snake_case for column names.
-- Use NULL defaults for all columns except id.
-- Return ONLY the CREATE TABLE statement, no explanation, no markdown fences.""",
-            "GRAPH": """Generate Neo4j Cypher statements to create nodes and relationships from this JSON schema.
-Rules:
-- Create nodes with properties matching the schema fields.
-- Identify potential relationships between entities.
-- Return ONLY the Cypher statements, no explanation.""",
-            "VECTOR": """Generate a configuration for vector embedding storage from this JSON schema.
-Rules:
-- Identify text fields suitable for embedding.
-- Define the collection schema with metadata fields.
-- Return as a JSON configuration object.""",
-        }
-
-        instruction = format_instructions.get(
-            target_format,
-            format_instructions["SQL"],
-        )
-
-        response = self.client.chat.completions.create(
-            model=self.translation_model,
-            messages=[
-                {"role": "system", "content": instruction},
-                {
-                    "role": "user",
-                    "content": f"Generate DDL for this schema:\n\n{json.dumps(schema, indent=2)}",
-                },
-            ],
-            temperature=0.0,
-        )
-
-        return response.choices[0].message.content or ""

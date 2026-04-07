@@ -5,7 +5,17 @@
 "use client";
 
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
-import {api, type Job, type JobListResponse} from "@/lib/api-client";
+import {api, type DatabaseModel, type Job, type JobListResponse} from "@/lib/api-client";
+
+// Job statuses where polling should pause — the user (or the LLM) needs to do
+// something before progress resumes. Includes Phase 7 review states.
+const IDLE_STATUSES = new Set([
+  "COMPLETED",
+  "FAILED",
+  "MODEL_PROPOSED",
+  "AWAITING_REVIEW",
+  "AWAITING_QUERY",
+]);
 
 // --- Queries ---
 
@@ -25,7 +35,7 @@ export function useJob(id: string, token: string) {
     enabled: !!token && !!id,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status === "COMPLETED" || status === "FAILED") return false;
+      if (status && IDLE_STATUSES.has(status)) return false;
       return 3000; // Poll every 3s as SSE fallback for active jobs
     },
   });
@@ -58,17 +68,29 @@ export function useCreateJob(token: string) {
   });
 }
 
-export function useApproveSchema(token: string) {
+export function useApproveModel(token: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({
       jobId,
-      schema,
+      model,
     }: {
       jobId: string;
-      schema: Record<string, unknown>;
-    }) => api.approveSchema(jobId, schema, token),
+      model: DatabaseModel;
+    }) => api.approveModel(jobId, model, token),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({queryKey: ["job", data.id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}
+
+export function useRejectModel(token: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => api.rejectModel(jobId, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({queryKey: ["job", data.id]});
       queryClient.invalidateQueries({queryKey: ["jobs"]});

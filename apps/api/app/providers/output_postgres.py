@@ -1,19 +1,27 @@
-"""ParseGrid — PostgreSQL output provider.
+"""ParseGrid — PostgreSQL output provider (Phase 7).
 
-Creates isolated schemas per job, executes LLM-generated DDL,
-and bulk inserts extracted data using parameterized queries.
+Per job we provision an isolated schema (`job_{uuid}`), run the
+deterministic DDL from `services.ddl.build_ddl`, and insert the
+reconciled multi-table dataset in FK dependency order using
+`graphlib.TopologicalSorter`.
+
+Inserts use SAVEPOINT-per-row so a single bad row never aborts the
+whole transaction.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-import re
+from graphlib import CycleError, TopologicalSorter
+from typing import Any
 from urllib.parse import urlparse
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.providers import BaseOutputProvider, ProvisionResult
+from app.schemas.extraction_model import DatabaseModel, TableDef
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +37,9 @@ def _get_sync_url() -> str:
 
 
 class PostgresOutputProvider(BaseOutputProvider):
-    """Provisions extracted data into PostgreSQL.
-
-    Each job gets an isolated schema (CREATE SCHEMA job_{uuid}) to prevent
-    collisions. The connection string returned uses search_path to scope
-    queries automatically.
-    """
+    """Provisions Phase 7 multi-table extracted data into PostgreSQL."""
 
     def test_connection(self, connection_string: str) -> bool:
-        """Attempt a lightweight connection to verify reachability."""
         engine = create_engine(connection_string, pool_pre_ping=True)
         try:
             with engine.connect() as conn:
@@ -49,55 +51,68 @@ class PostgresOutputProvider(BaseOutputProvider):
     def provision(
         self,
         schema_name: str,
-        ddl: str,
-        data: dict | list,
-        json_schema: dict,
+        ddl_statements: list[str],
+        data: dict[str, list[dict[str, Any]]],
+        model: DatabaseModel,
     ) -> ProvisionResult:
-        """Create schema, execute DDL, bulk insert, return connection string."""
         engine = create_engine(_get_sync_url())
+        rows_inserted = 0
+        ddl_audit = ";\n".join(ddl_statements) + ";"
 
         try:
             with engine.connect() as conn:
-                # 1. Create isolated schema
+                # 1. Isolated schema.
                 conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
                 conn.execute(text(f'SET search_path TO "{schema_name}"'))
                 logger.info(f"Created schema: {schema_name}")
 
-                # 2. Execute DDL statements
-                statements = _split_sql(ddl)
-                for stmt in statements:
-                    stmt = stmt.strip()
-                    if stmt and not stmt.startswith("--"):
-                        try:
-                            conn.execute(text(stmt))
-                        except Exception as e:
-                            logger.warning(
-                                f"DDL statement failed (continuing): {e}\n  SQL: {stmt[:200]}"
-                            )
+                # 2. DDL — already validated and ordered (CREATE then ALTER).
+                for stmt in ddl_statements:
+                    stripped = stmt.strip()
+                    if not stripped:
+                        continue
+                    try:
+                        conn.execute(text(stripped))
+                    except Exception as e:
+                        logger.warning(
+                            f"DDL statement failed (continuing): {e}\n  SQL: {stripped[:200]}"
+                        )
 
-                logger.info(f"Executed {len(statements)} DDL statements in {schema_name}")
+                logger.info(
+                    f"Executed {len(ddl_statements)} DDL statements in {schema_name}"
+                )
 
-                # 3. Bulk insert data
-                rows_inserted = _bulk_insert(conn, data, json_schema, schema_name)
+                # 3. Insert rows in FK dependency order.
+                table_defs = {t.table_name: t for t in model.tables}
+                ordered_tables = _topological_table_order(model)
+
+                for table_name in ordered_tables:
+                    table_def = table_defs.get(table_name)
+                    rows = data.get(table_name, [])
+                    if not table_def or not rows:
+                        continue
+                    inserted = _insert_table(
+                        conn=conn,
+                        schema_name=schema_name,
+                        table_def=table_def,
+                        rows=rows,
+                    )
+                    rows_inserted += inserted
 
                 conn.commit()
 
         finally:
             engine.dispose()
 
-        connection_string = _generate_connection_string(schema_name)
-
         return ProvisionResult(
-            connection_string=connection_string,
+            connection_string=_generate_connection_string(schema_name),
             rows_inserted=rows_inserted,
             schema_name=schema_name,
-            ddl_executed=ddl,
+            ddl_executed=ddl_audit,
         )
 
     def delete_output(self, schema_name: str) -> None:
-        """Drop a provisioned schema and all of its objects."""
         engine = create_engine(_get_sync_url())
-
         try:
             with engine.connect() as conn:
                 conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
@@ -112,81 +127,93 @@ class PostgresOutputProvider(BaseOutputProvider):
 # ---------------------------------------------------------------------------
 
 
-def _split_sql(sql: str) -> list[str]:
-    """Split SQL string into individual statements, stripping markdown fences."""
-    sql = re.sub(r"```sql\s*", "", sql)
-    sql = re.sub(r"```\s*", "", sql)
-    return [s.strip() for s in sql.split(";") if s.strip()]
+# Provenance columns added to every table by the DDL generator. Mirrored here
+# so the row inserter knows about them. Keep in sync with `services/ddl.py`.
+_PROVENANCE_COLUMNS = ("source_page_numbers", "extraction_confidence", "reconciliation_notes")
 
 
-def _bulk_insert(
+def _topological_table_order(model: DatabaseModel) -> list[str]:
+    """Parent-before-child table order computed from enabled relationships.
+
+    Falls back to declaration order if the dependency graph contains a cycle
+    (which `validate_model` does not currently prevent — we just log and
+    insert in declaration order so the job can still complete).
+    """
+    sorter: TopologicalSorter[str] = TopologicalSorter()
+    for table in model.tables:
+        sorter.add(table.table_name)
+    for rel in model.relationships:
+        if not rel.enabled:
+            continue
+        if rel.source_table == rel.references_table:
+            continue  # self-references don't constrain insert order
+        # source depends on references → references comes first.
+        sorter.add(rel.source_table, rel.references_table)
+    try:
+        return list(sorter.static_order())
+    except CycleError as e:
+        logger.warning(f"FK dependency cycle detected, falling back to declaration order: {e}")
+        return [t.table_name for t in model.tables]
+
+
+def _insert_table(
     conn,
-    data: dict | list,
-    json_schema: dict,
     schema_name: str,
+    table_def: TableDef,
+    rows: list[dict[str, Any]],
 ) -> int:
-    """Insert extracted data into the provisioned tables. Returns row count."""
-    # Find the items array
-    items_key = "items"
-    for k, v in json_schema.get("properties", {}).items():
-        if v.get("type") == "array":
-            items_key = k
-            break
+    """Insert rows for one table using a row-level SAVEPOINT for resilience."""
+    declared_columns = [c.name for c in table_def.columns]
+    all_columns = list(declared_columns) + list(_PROVENANCE_COLUMNS)
 
-    records = data.get(items_key, []) if isinstance(data, dict) else data
-    if not records:
-        logger.warning(f"No records to insert for {schema_name}")
-        return 0
-
-    if not isinstance(records[0], dict):
-        return 0
-
-    # Find the actual table name from the schema we just created
-    result = conn.execute(text(
-        "SELECT tablename FROM pg_tables WHERE schemaname = :schema"
-    ), {"schema": schema_name})
-    table_names = [r[0] for r in result]
-    if table_names:
-        table_name = table_names[0]
-    else:
-        # Fallback: infer from schema title
-        table_name = json_schema.get("title", items_key).lower()
-        table_name = re.sub(r"[^a-z0-9_]", "_", table_name)
-
-    columns = list(records[0].keys())
-    col_names = ", ".join(f'"{c}"' for c in columns)
-    placeholders = ", ".join(f":{c}" for c in columns)
-
-    insert_sql = f'INSERT INTO "{schema_name}"."{table_name}" ({col_names}) VALUES ({placeholders})'
+    col_list = ", ".join(f'"{c}"' for c in all_columns)
+    placeholders = ", ".join(f":{c}" for c in all_columns)
+    insert_sql = (
+        f'INSERT INTO "{schema_name}"."{table_def.table_name}" '
+        f"({col_list}) VALUES ({placeholders})"
+    )
 
     inserted = 0
-    for record in records:
+    for row in rows:
         try:
-            clean_record = {}
-            for k, v in record.items():
-                if isinstance(v, (dict, list)):
-                    clean_record[k] = json.dumps(v)
-                else:
-                    clean_record[k] = v
-
             conn.execute(text("SAVEPOINT row_sp"))
-            conn.execute(text(insert_sql), clean_record)
+            params = _build_params(row, all_columns)
+            conn.execute(text(insert_sql), params)
             conn.execute(text("RELEASE SAVEPOINT row_sp"))
             inserted += 1
         except Exception as e:
             conn.execute(text("ROLLBACK TO SAVEPOINT row_sp"))
-            logger.warning(f"Insert failed for record (skipping): {e}")
+            logger.warning(
+                f"Insert failed for row in {schema_name}.{table_def.table_name} "
+                f"(skipping): {e}"
+            )
 
-    logger.info(f"Inserted {inserted}/{len(records)} records into {schema_name}.{table_name}")
+    logger.info(
+        f"Inserted {inserted}/{len(rows)} rows into {schema_name}.{table_def.table_name}"
+    )
     return inserted
 
 
+def _build_params(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
+    """Project a row dict onto the declared+provenance columns.
+
+    Missing columns become None. JSONB columns get pre-serialized so they
+    bind cleanly through psycopg2.
+    """
+    params: dict[str, Any] = {}
+    for col in columns:
+        v = row.get(col)
+        if isinstance(v, (list, dict)):
+            params[col] = json.dumps(v)
+        else:
+            params[col] = v
+    return params
+
+
 def _generate_connection_string(schema_name: str) -> str:
-    """Generate a user-facing connection string with search_path scoping."""
     parsed = urlparse(
         settings.database_url.replace("+asyncpg", "").replace("+psycopg2", "")
     )
-
     return (
         f"postgresql://{parsed.username}:{parsed.password}"
         f"@{parsed.hostname}:{parsed.port or 5432}"

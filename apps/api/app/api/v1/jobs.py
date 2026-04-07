@@ -17,14 +17,14 @@ from app.schemas.job import (
     JobListResponse,
     JobResponse,
     JobStatusResponse,
-    SchemaApprovalRequest,
+    ModelApprovalRequest,
     TargetQueryRequest,
 )
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 DELETABLE_JOB_STATUSES = {
-    JobStatus.SCHEMA_PROPOSED,
+    JobStatus.MODEL_PROPOSED,
     JobStatus.AWAITING_REVIEW,
     JobStatus.AWAITING_QUERY,
     JobStatus.COMPLETED,
@@ -140,7 +140,15 @@ async def delete_job(
             ),
         )
 
-    delete_object_from_s3(job.file_key)
+    upload_prefix = (
+        f"{job.file_key.rsplit('/', 1)[0]}/"
+        if "/" in job.file_key
+        else None
+    )
+    if upload_prefix:
+        delete_prefix_from_s3(upload_prefix)
+    else:
+        delete_object_from_s3(job.file_key)
     delete_prefix_from_s3(f"parsed/{job_id}/")
     delete_prefix_from_s3(f"extracted/{job_id}/")
 
@@ -177,35 +185,46 @@ async def get_job_status(
 
 
 @router.post(
-    "/{job_id}/approve-schema",
+    "/{job_id}/approve-model",
     response_model=JobResponse,
-    summary="Approve or edit the proposed schema",
+    summary="Approve or edit the proposed extraction model (Phase 7)",
 )
-async def approve_schema(
+async def approve_model(
     job_id: str,
-    body: SchemaApprovalRequest,
+    body: ModelApprovalRequest,
     user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> Job:
-    """Lock the user-approved schema and begin extraction."""
+    """Validate and lock the user-approved DatabaseModel, then begin extraction."""
     query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
     result = await db.execute(query)
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.status not in (JobStatus.SCHEMA_PROPOSED, JobStatus.AWAITING_REVIEW):
+    if job.status not in (JobStatus.MODEL_PROPOSED, JobStatus.AWAITING_REVIEW):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot approve schema in status {job.status}",
+            detail=f"Cannot approve model in status {job.status}",
         )
 
-    job.locked_schema = body.locked_schema
-    job.status = JobStatus.SCHEMA_LOCKED
+    # Server-side normalization + structural validation. Downgraded
+    # relationships are preserved (enabled=False) so the user sees what was
+    # rejected. Identifier errors raise ValueError → 422.
+    from app.services.ddl import validate_model
+
+    try:
+        validation = validate_model(body.locked_model)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid model: {e}") from e
+
+    job.locked_model = validation.model.model_dump()
+    job.status = JobStatus.MODEL_LOCKED
+    job.progress = 0.0
     await db.commit()
     await db.refresh(job)
 
-    # Enqueue extraction pipeline (Map-Reduce)
+    # Enqueue extraction pipeline (per-table Map-Reduce).
     from app.worker.tasks.extract import run_extraction
 
     run_extraction.apply_async(args=[job.id])
@@ -214,35 +233,45 @@ async def approve_schema(
 
 
 @router.post(
-    "/{job_id}/reject-schema",
+    "/{job_id}/reject-model",
     response_model=JobResponse,
-    summary="Reject the proposed schema and re-trigger OCR",
+    summary="Reject the proposed model and reset the job (Phase 7)",
 )
-async def reject_schema(
+async def reject_model(
     job_id: str,
     user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> Job:
-    """Reject the AI-proposed schema, reset the job, and re-run OCR + schema discovery."""
+    """Discard the AI-proposed DatabaseModel and re-run discovery from scratch."""
     query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
     result = await db.execute(query)
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.status not in (JobStatus.SCHEMA_PROPOSED, JobStatus.AWAITING_REVIEW):
+    if job.status not in (JobStatus.MODEL_PROPOSED, JobStatus.AWAITING_REVIEW):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot reject schema in status {job.status}",
+            detail=f"Cannot reject model in status {job.status}",
         )
 
-    job.proposed_schema = None
-    job.status = JobStatus.UPLOADED
+    job.proposed_model = None
+    job.document_profile = None
+    job.section_map = None
     job.progress = 0.0
+
+    # FULL jobs re-run OCR → profiling → discovery.
+    # TARGETED jobs return to AWAITING_QUERY so the user can issue a new query.
+    if job.job_type == JobType.TARGETED:
+        job.status = JobStatus.AWAITING_QUERY
+        await db.commit()
+        await db.refresh(job)
+        return job
+
+    job.status = JobStatus.UPLOADED
     await db.commit()
     await db.refresh(job)
 
-    # Re-enqueue OCR processing
     from app.worker.tasks.ocr import process_document
 
     process_document.apply_async(args=[job.id])
@@ -253,18 +282,22 @@ async def reject_schema(
 @router.get(
     "/{job_id}/data-preview",
     response_model=DataPreviewResponse,
-    summary="Get a paginated preview of extracted data",
+    summary="Get a multi-table preview of extracted data (Phase 7)",
 )
 async def get_data_preview(
     job_id: str,
     user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Return the first 20 records from extracted_data plus the total count.
+    """Return per-table previews (first 20 rows + counts + columns).
 
-    The full extracted_data payload can be very large, so this endpoint
-    provides a lightweight preview for the frontend to render on completion.
+    Phase 7 shape: extracted_data is `{table_name: [row, ...]}`. Columns
+    are taken from the locked_model so empty tables still report a header.
     """
+    import json
+
+    from app.schemas.extraction_model import DatabaseModel
+
     query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
     result = await db.execute(query)
     job = result.scalar_one_or_none()
@@ -276,42 +309,47 @@ async def get_data_preview(
 
     data = job.extracted_data
     if isinstance(data, str):
-        import json
         data = json.loads(data)
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="extracted_data is not a multi-table dict (Phase 7 shape)",
+        )
 
-    # Find the items array — it may be at the top level or nested under a key
-    items: list = []
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        # Look for a list-valued key (commonly "items", "records", "rows")
-        for key in ("items", "records", "rows", "data"):
-            if key in data and isinstance(data[key], list):
-                items = data[key]
-                break
-        if not items:
-            # Fallback: find the first list-valued key
-            for val in data.values():
-                if isinstance(val, list):
-                    items = val
-                    break
+    # Pull declared columns from locked_model so empty tables still show headers.
+    locked_raw = job.locked_model
+    if isinstance(locked_raw, str):
+        locked_raw = json.loads(locked_raw)
+    declared_columns: dict[str, list[str]] = {}
+    if locked_raw:
+        try:
+            locked_model = DatabaseModel.model_validate(locked_raw)
+            declared_columns = {
+                t.table_name: [c.name for c in t.columns] for t in locked_model.tables
+            }
+        except Exception:
+            declared_columns = {}
 
-    # Extract column names from the first record
-    columns: list[str] = []
-    if items and isinstance(items[0], dict):
-        columns = list(items[0].keys())
+    tables: dict[str, dict] = {}
+    for table_name, rows in data.items():
+        if not isinstance(rows, list):
+            continue
+        columns = declared_columns.get(table_name) or (
+            list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+        )
+        tables[table_name] = {
+            "total_records": len(rows),
+            "preview": rows[:20],
+            "columns": columns,
+        }
 
-    return {
-        "total_records": len(items),
-        "preview": items[:20],
-        "columns": columns,
-    }
+    return {"tables": tables}
 
 
 @router.post(
     "/{job_id}/target-query",
     response_model=JobResponse,
-    summary="Submit a targeted extraction query",
+    summary="Submit a targeted extraction query (Phase 7)",
 )
 async def target_query(
     job_id: str,
@@ -321,10 +359,12 @@ async def target_query(
 ) -> Job:
     """Submit a natural language query for targeted RAG extraction.
 
-    Embeds the query, retrieves the top 10 most relevant chunks via
-    pgvector cosine similarity, generates a schema from those chunks,
-    and stores the target chunks for subsequent extraction.
+    Embeds the query, retrieves the top-K most relevant chunks via pgvector
+    cosine similarity, asks the LLM to propose a Phase 7 DatabaseModel from
+    those chunks, and stores both the model and the retrieved chunks.
     """
+    import json
+
     from sqlalchemy import text as sql_text
 
     query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
@@ -339,20 +379,27 @@ async def target_query(
             detail=f"Cannot submit query in status {job.status}. Job must be in AWAITING_QUERY.",
         )
 
-    # 1. Embed the user's query
-    from app.providers.factory import get_embedding_provider
+    # 1. Embed the user's query.
+    from app.providers.factory import get_embedding_provider, get_llm_provider
 
     embedder = get_embedding_provider()
     query_embedding = embedder.embed_query(body.query)
     embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
-    # 2. Retrieve top 10 chunks via cosine similarity
+    # 2. Retrieve top-K chunks via cosine similarity.
+    #    The embedding column is vector(3072), but pgvector caps full-precision
+    #    HNSW at 2000 dims, so the index lives on the halfvec(3072) cast. The
+    #    ORDER BY expression here mirrors the index expression so the planner
+    #    can serve an ANN lookup; the SELECT keeps full-precision similarity
+    #    for the returned score.
     chunk_result = await db.execute(
         sql_text(
-            "SELECT chunk_text, page_number, 1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity "
+            "SELECT chunk_text, page_number, "
+            "1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity "
             "FROM document_chunks "
             "WHERE job_id = :job_id "
-            "ORDER BY embedding <=> CAST(:query_embedding AS vector) "
+            "ORDER BY embedding::halfvec(3072) "
+            "         <=> CAST(:query_embedding AS vector)::halfvec(3072) "
             "LIMIT 10"
         ),
         {"job_id": job_id, "query_embedding": embedding_str},
@@ -362,41 +409,48 @@ async def target_query(
     if not rows:
         raise HTTPException(status_code=400, detail="No indexed chunks found for this job")
 
-    # 3. Build context from retrieved chunks
+    # 3. Build context. The "--- Page N ---" markers match the format the
+    #    chunker expects so downstream extraction can recover page numbers.
     retrieved_chunks = []
     context_parts = []
     for row in rows:
-        chunk_text, page_number, similarity = row
-        retrieved_chunks.append({
-            "text": chunk_text,
-            "page_number": page_number,
-            "similarity": float(similarity),
-        })
-        context_parts.append(f"[Page {page_number}]\n{chunk_text}")
+        chunk_text_value, page_number, similarity = row
+        retrieved_chunks.append(
+            {
+                "text": chunk_text_value,
+                "page_number": page_number,
+                "similarity": float(similarity),
+            }
+        )
+        context_parts.append(f"--- Page {page_number} ---\n{chunk_text_value}")
 
-    context_text = "\n\n---\n\n".join(context_parts)
+    context_text = "\n\n".join(context_parts)
 
-    # 4. Generate schema from retrieved chunks
-    from app.providers.factory import get_llm_provider
-
+    # 4. Ask the LLM to propose a DatabaseModel from the retrieved context.
+    #    No DocumentProfile for TARGETED — the retrieval acts as the profile.
     llm = get_llm_provider()
-    proposed_schema = llm.generate_schema(context_text, len(rows))
+    proposed_model = llm.generate_model(
+        document_text=context_text,
+        profile=None,
+        num_pages=len(rows),
+    )
 
-    # 5. Store target chunks and schema on the job
-    import json
-
+    # 5. Persist target chunks + proposed model + transition.
     job.target_chunks = retrieved_chunks
-    job.proposed_schema = proposed_schema if isinstance(proposed_schema, dict) else json.loads(proposed_schema)
-    job.status = JobStatus.SCHEMA_PROPOSED
+    job.proposed_model = proposed_model.model_dump()
+    job.status = JobStatus.MODEL_PROPOSED
     job.progress = 100.0
     await db.commit()
     await db.refresh(job)
 
-    # 6. Publish SSE event
+    # 6. Publish SSE event so the UI flips into review.
     from app.worker.db import _get_redis_client
 
     r = _get_redis_client()
     channel = f"job:{job_id}:status"
-    r.publish(channel, json.dumps({"status": "SCHEMA_PROPOSED", "progress": 100.0}))
+    r.publish(
+        channel,
+        json.dumps({"status": "MODEL_PROPOSED", "progress": 100.0}),
+    )
 
     return job

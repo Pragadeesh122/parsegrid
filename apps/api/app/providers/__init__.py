@@ -105,59 +105,69 @@ class LLMResponse:
 class BaseLLMProvider(ABC):
     """Abstract interface for LLM providers.
 
+    Phase 7 contract: model discovery returns a typed `DatabaseModel`,
+    extraction is per-table, and DDL generation is gone (deterministic).
+
     Implementations:
     - OpenAILLMProvider (default, cloud)
     - Future: OllamaProvider, AnthropicProvider, etc.
     """
 
     @abstractmethod
-    def generate_schema(self, sample_text: str, num_pages: int) -> dict:
-        """Analyze sample text and propose a JSON schema for extraction.
+    def generate_model(
+        self,
+        document_text: str,
+        profile: "DocumentProfile | None",
+        num_pages: int,
+    ) -> "DatabaseModel":
+        """Analyze document text and propose a typed DatabaseModel.
+
+        Uses OpenAI strict structured outputs so the LLM cannot emit
+        arbitrary keys — the response is guaranteed to validate against
+        the meta-schema.
 
         Args:
-            sample_text: Text from the first few pages of the document.
-            num_pages: Total number of pages in the document.
+            document_text: Sampled or retrieved document text.
+            profile: Optional DocumentProfile for FULL jobs (None for TARGETED).
+            num_pages: Total pages in the source document.
 
         Returns:
-            A JSON schema dict describing the data structure found.
+            A validated DatabaseModel.
         """
         ...
 
     @abstractmethod
-    def extract_structured(
+    def extract_table(
         self,
         text: str,
-        schema: dict,
+        table: "TableDef",
+        link_targets: "list[RelationshipDef]",
     ) -> LLMResponse:
-        """Extract structured data from text according to the given schema.
+        """Extract structured rows for a single table from a chunk of text.
 
-        Uses Structured Outputs (strict: true) to guarantee schema compliance.
+        Uses Structured Outputs (strict: true) with a per-table Pydantic
+        model built at runtime. Each row may also carry symbolic link-key
+        columns for any relationships where this table is the source.
 
         Args:
             text: The text chunk to extract data from.
-            schema: The locked JSON schema to enforce.
+            table: The TableDef describing the columns to extract.
+            link_targets: Relationships where source_table == table.table_name.
 
         Returns:
-            LLMResponse with extracted data conforming to the schema.
+            LLMResponse whose `data` is `{"rows": [...]}`.
         """
         ...
 
-    @abstractmethod
-    def generate_ddl(
-        self,
-        schema: dict,
-        target_format: str,
-    ) -> str:
-        """Generate DDL statements from a JSON schema for the target database.
 
-        Args:
-            schema: The locked JSON schema.
-            target_format: "SQL", "GRAPH", or "VECTOR".
-
-        Returns:
-            DDL string (SQL CREATE TABLE, Cypher CREATE, etc.)
-        """
-        ...
+# Forward references for the type hints above. Imported lazily to avoid
+# a circular import (extraction_model imports nothing from providers).
+from app.schemas.extraction_model import (  # noqa: E402
+    DatabaseModel,
+    DocumentProfile,
+    RelationshipDef,
+    TableDef,
+)
 
 
 # ============================================================================
@@ -246,20 +256,20 @@ class BaseOutputProvider(ABC):
     def provision(
         self,
         schema_name: str,
-        ddl: str,
-        data: dict | list,
-        json_schema: dict,
+        ddl_statements: list[str],
+        data: "dict[str, list[dict]]",
+        model: "DatabaseModel",
     ) -> ProvisionResult:
-        """Create schema, execute DDL, and bulk insert data.
+        """Create schema, execute DDL, and bulk insert multi-table data.
 
         Args:
             schema_name: Isolated schema/namespace name (e.g., job_{uuid}).
-            ddl: DDL statements to execute.
-            data: The merged extraction data.
-            json_schema: The locked JSON schema (for table name inference).
+            ddl_statements: Ordered DDL statements from `services.ddl.build_ddl`.
+            data: Reconciled rows keyed by table name.
+            model: The (already validated) locked DatabaseModel.
 
         Returns:
-            ProvisionResult with connection string, row count, etc.
+            ProvisionResult with connection string, total row count, etc.
         """
         ...
 

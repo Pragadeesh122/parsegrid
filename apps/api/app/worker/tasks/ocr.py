@@ -1,7 +1,9 @@
 """ParseGrid — OCR processing tasks.
 
 Uses PaddleOCR (local, air-gapped) via the BaseOCRProvider interface.
-After OCR, triggers the Schema Generator Agent via the BaseLLMProvider.
+After OCR completes:
+- TARGETED jobs → `index_document` (pgvector indexing)
+- FULL jobs    → `profile_and_propose` (whole-document profiling + model discovery)
 """
 
 import json
@@ -117,28 +119,21 @@ def process_document(self, job_id: str):
                 logger.info(f"Job {job_id}: OCR complete, dispatched indexing (TARGETED)")
 
             else:
-                # Full pipeline: generate schema proposal
-                from app.providers.factory import get_llm_provider
-
-                llm = get_llm_provider()
-
-                sample_text = "\n\n".join(
-                    p.full_text for p in ocr_result.pages[:5]
-                )
-                proposed_schema = llm.generate_schema(sample_text, ocr_result.page_count)
-
-                publish_status(job_id, "SCHEMA_PROPOSED", 90.0)
-
+                # Full pipeline: hand off to profiling + model discovery (Phase 7).
                 update_job(
                     job_id,
-                    status="SCHEMA_PROPOSED",
-                    progress=100.0,
+                    status="OCR_PROCESSING",
+                    progress=80.0,
                     page_count=ocr_result.page_count,
-                    proposed_schema=json.dumps(proposed_schema),
                 )
+                publish_status(job_id, "OCR_PROCESSING", 80.0)
 
-                publish_status(job_id, "SCHEMA_PROPOSED", 100.0)
-                logger.info(f"Job {job_id}: OCR + schema proposal complete (FULL)")
+                from app.worker.tasks.profile import profile_and_propose
+
+                profile_and_propose.apply_async(args=[job_id])
+                logger.info(
+                    f"Job {job_id}: OCR complete, dispatched profile_and_propose (FULL)"
+                )
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: OCR failed: {exc}")

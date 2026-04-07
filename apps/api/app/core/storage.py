@@ -84,31 +84,56 @@ def upload_file_to_s3(
 
 def delete_object_from_s3(object_key: str) -> None:
     """Delete a single object from S3/MinIO if it exists."""
-    client = get_s3_client()
-    try:
-        client.delete_object(Bucket=settings.s3_bucket, Key=object_key)
-    except ClientError as exc:
-        error_code = exc.response.get("Error", {}).get("Code")
-        if error_code not in {"NoSuchKey", "404"}:
-            raise
+    delete_objects_from_s3([object_key])
 
 
 def delete_prefix_from_s3(prefix: str) -> int:
     """Delete all objects under a prefix. Returns the number deleted."""
     client = get_s3_client()
     paginator = client.get_paginator("list_objects_v2")
-    deleted = 0
+    object_keys: list[str] = []
 
     for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix=prefix):
         contents = page.get("Contents", [])
         if not contents:
             continue
+        object_keys.extend(obj["Key"] for obj in contents)
 
-        objects = [{"Key": obj["Key"]} for obj in contents]
-        client.delete_objects(
-            Bucket=settings.s3_bucket,
-            Delete={"Objects": objects, "Quiet": True},
-        )
-        deleted += len(objects)
+    return delete_objects_from_s3(object_keys)
+
+
+def delete_objects_from_s3(object_keys: list[str]) -> int:
+    """Delete many objects and raise if MinIO/S3 reports failures."""
+    if not object_keys:
+        return 0
+
+    client = get_s3_client()
+    deleted = 0
+
+    for start in range(0, len(object_keys), 1000):
+        chunk = object_keys[start : start + 1000]
+        try:
+            response = client.delete_objects(
+                Bucket=settings.s3_bucket,
+                Delete={
+                    "Objects": [{"Key": key} for key in chunk],
+                    "Quiet": False,
+                },
+            )
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404"}:
+                continue
+            raise
+
+        errors = response.get("Errors", [])
+        if errors:
+            details = ", ".join(
+                f"{error.get('Key', '?')}: {error.get('Code', 'Unknown')}"
+                for error in errors
+            )
+            raise RuntimeError(f"Failed to delete S3 objects: {details}")
+
+        deleted += len(response.get("Deleted", []))
 
     return deleted

@@ -98,6 +98,58 @@ async function request<T>(
 
 export type JobType = "FULL" | "TARGETED";
 
+// ---- Phase 7 extraction meta-schema (mirrors apps/api/app/schemas/extraction_model.py) ----
+
+export type ColumnType = "string" | "integer" | "float" | "boolean" | "date";
+export type ExtractionType = "single_table" | "table_graph";
+export type LinkBasis = "natural_key" | "composite_key" | "manual_only";
+
+export interface ColumnDef {
+  name: string;
+  type: ColumnType;
+  description: string;
+  is_primary_key: boolean;
+}
+
+export interface RelationshipDef {
+  source_table: string;
+  source_column: string;
+  references_table: string;
+  references_column: string;
+  link_basis: LinkBasis;
+  composite_key_columns: string[] | null;
+  nullable: boolean;
+  enabled: boolean;
+}
+
+export interface TableDef {
+  table_name: string;
+  description: string;
+  columns: ColumnDef[];
+}
+
+export interface DatabaseModel {
+  extraction_type: ExtractionType;
+  tables: TableDef[];
+  relationships: RelationshipDef[];
+}
+
+export interface SectionCandidate {
+  section_id: string;
+  title: string;
+  page_range: [number, number];
+  assigned_tables: string[];
+}
+
+export interface DocumentProfile {
+  total_pages: number;
+  sampled_pages: number[];
+  region_summary: Record<string, number>;
+  sections: SectionCandidate[];
+  recommended_extraction_type: ExtractionType;
+  rationale: string;
+}
+
 export interface Job {
   id: string;
   user_id: string;
@@ -108,8 +160,10 @@ export interface Job {
   job_type: JobType;
   output_format: string;
   progress: number;
-  proposed_schema: Record<string, unknown> | null;
-  locked_schema: Record<string, unknown> | null;
+  document_profile: DocumentProfile | null;
+  proposed_model: DatabaseModel | null;
+  locked_model: DatabaseModel | null;
+  section_map: SectionCandidate[] | null;
   connection_string: string | null;
   error_message: string | null;
   page_count: number | null;
@@ -140,10 +194,15 @@ export interface UploadUrlResponse {
   file_key: string;
 }
 
-export interface DataPreviewResponse {
+export interface TablePreview {
   total_records: number;
   preview: Record<string, unknown>[];
   columns: string[];
+}
+
+export interface DataPreviewResponse {
+  /** Phase 7: per-table previews keyed by table_name. */
+  tables: Record<string, TablePreview>;
 }
 
 // ---- API Methods ----
@@ -197,19 +256,15 @@ export const api = {
       connection_string: string | null;
     }>(`/api/v1/jobs/${id}/status`, { token }),
 
-  approveSchema: (
-    id: string,
-    schema: Record<string, unknown>,
-    token: string,
-  ) =>
-    request<Job>(`/api/v1/jobs/${id}/approve-schema`, {
+  approveModel: (id: string, model: DatabaseModel, token: string) =>
+    request<Job>(`/api/v1/jobs/${id}/approve-model`, {
       method: "POST",
-      body: { locked_schema: schema },
+      body: { locked_model: model },
       token,
     }),
 
-  rejectSchema: (id: string, token: string) =>
-    request<Job>(`/api/v1/jobs/${id}/reject-schema`, {
+  rejectModel: (id: string, token: string) =>
+    request<Job>(`/api/v1/jobs/${id}/reject-model`, {
       method: "POST",
       token,
     }),

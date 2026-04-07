@@ -15,17 +15,26 @@ from app.models.base import Base, TimestampMixin, generate_uuid
 
 
 class JobStatus(str, enum.Enum):
-    """Job lifecycle states (matches state machine in implementation plan)."""
+    """Job lifecycle states (matches state machine in implementation plan).
+
+    Phase 7 introduced PROFILING / MODEL_PROPOSED / MODEL_LOCKED / RECONCILING
+    in place of SCHEMA_PROPOSED / SCHEMA_LOCKED. The old SCHEMA_* enum values
+    are intentionally absent here — the migration leaves them as dead values
+    on the Postgres enum type because removing values from an enum requires
+    recreating the type.
+    """
 
     UPLOADED = "UPLOADED"
     OCR_PROCESSING = "OCR_PROCESSING"
     INDEXING = "INDEXING"
     AWAITING_QUERY = "AWAITING_QUERY"
-    SCHEMA_PROPOSED = "SCHEMA_PROPOSED"
+    PROFILING = "PROFILING"
+    MODEL_PROPOSED = "MODEL_PROPOSED"
     AWAITING_REVIEW = "AWAITING_REVIEW"
-    SCHEMA_LOCKED = "SCHEMA_LOCKED"
+    MODEL_LOCKED = "MODEL_LOCKED"
     EXTRACTING = "EXTRACTING"
     MERGING = "MERGING"
+    RECONCILING = "RECONCILING"
     TRANSLATING = "TRANSLATING"
     PROVISIONING = "PROVISIONING"
     COMPLETED = "COMPLETED"
@@ -99,20 +108,30 @@ class Job(Base, TimestampMixin):
         default=0.0,
         comment="Progress percentage 0-100",
     )
-    proposed_schema: Mapped[dict | None] = mapped_column(
+    document_profile: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,
-        comment="AI-proposed JSON schema (Phase 1 discovery)",
+        comment="Whole-document profile (Phase 7): sampled pages, region histogram, sections.",
     )
-    locked_schema: Mapped[dict | None] = mapped_column(
+    proposed_model: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,
-        comment="User-approved JSON schema (Phase 2 validation)",
+        comment="AI-proposed DatabaseModel (Phase 7 discovery).",
+    )
+    locked_model: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="User-approved DatabaseModel after review (Phase 7).",
+    )
+    section_map: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Optional list[SectionCandidate] for UI grouping and table-routed extraction.",
     )
     extracted_data: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,
-        comment="Merged extraction result (Phase 3 execution)",
+        comment="Merged extraction result. Phase 7 shape: {table_name: [row, ...]}.",
     )
     output_schema_name: Mapped[str | None] = mapped_column(
         String(255),

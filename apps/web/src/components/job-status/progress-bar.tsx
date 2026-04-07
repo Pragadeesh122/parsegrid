@@ -5,11 +5,14 @@
 
 "use client";
 
+// Phase 7 pipeline: Upload → OCR → Profile → Review → Extract → Reconcile → Provision.
 const PHASES = [
   { key: "upload", label: "Upload" },
-  { key: "process", label: "Process" },
+  { key: "ocr", label: "OCR" },
+  { key: "profile", label: "Profile" },
   { key: "review", label: "Review" },
   { key: "extract", label: "Extract" },
+  { key: "reconcile", label: "Reconcile" },
   { key: "provision", label: "Provision" },
 ] as const;
 
@@ -18,17 +21,19 @@ const STATUS_CONFIG: Record<
   { label: string; phase: number }
 > = {
   UPLOADED: { label: "Uploaded", phase: 0 },
-  OCR_PROCESSING: { label: "Processing document", phase: 1 },
-  INDEXING: { label: "Indexing document", phase: 1 },
-  AWAITING_QUERY: { label: "Ready for your query", phase: 2 },
-  SCHEMA_PROPOSED: { label: "Schema ready for review", phase: 2 },
-  AWAITING_REVIEW: { label: "Awaiting your review", phase: 2 },
-  SCHEMA_LOCKED: { label: "Schema locked", phase: 2 },
-  EXTRACTING: { label: "Extracting data", phase: 3 },
-  MERGING: { label: "Merging results", phase: 3 },
-  TRANSLATING: { label: "Translating schema", phase: 3 },
-  PROVISIONING: { label: "Provisioning database", phase: 4 },
-  COMPLETED: { label: "Completed", phase: 5 },
+  OCR_PROCESSING: { label: "Reading document", phase: 1 },
+  INDEXING: { label: "Indexing chunks", phase: 1 },
+  AWAITING_QUERY: { label: "Ready for your query", phase: 3 },
+  PROFILING: { label: "Profiling document", phase: 2 },
+  MODEL_PROPOSED: { label: "Model ready for review", phase: 3 },
+  AWAITING_REVIEW: { label: "Awaiting your review", phase: 3 },
+  MODEL_LOCKED: { label: "Model locked", phase: 3 },
+  EXTRACTING: { label: "Extracting data", phase: 4 },
+  MERGING: { label: "Merging results", phase: 4 },
+  RECONCILING: { label: "Reconciling rows", phase: 5 },
+  TRANSLATING: { label: "Generating DDL", phase: 5 },
+  PROVISIONING: { label: "Provisioning database", phase: 6 },
+  COMPLETED: { label: "Completed", phase: 7 },
   FAILED: { label: "Failed", phase: -1 },
 };
 

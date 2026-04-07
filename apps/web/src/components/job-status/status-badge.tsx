@@ -5,19 +5,26 @@
 
 "use client";
 
+const EMERALD = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+const AMBER = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+const NEUTRAL = "bg-zinc-800/60 text-zinc-400 border-zinc-700/60";
+const NEUTRAL_LIGHT = "bg-zinc-800/60 text-zinc-300 border-zinc-700/60";
+
 const BADGE_STYLES: Record<string, string> = {
-  UPLOADED: "bg-zinc-800/60 text-zinc-400 border-zinc-700/60",
-  OCR_PROCESSING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  INDEXING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  AWAITING_QUERY: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  SCHEMA_PROPOSED: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  AWAITING_REVIEW: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  SCHEMA_LOCKED: "bg-zinc-800/60 text-zinc-300 border-zinc-700/60",
-  EXTRACTING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  MERGING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  TRANSLATING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  PROVISIONING: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  COMPLETED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  UPLOADED: NEUTRAL,
+  OCR_PROCESSING: EMERALD,
+  INDEXING: EMERALD,
+  AWAITING_QUERY: AMBER,
+  PROFILING: EMERALD,
+  MODEL_PROPOSED: AMBER,
+  AWAITING_REVIEW: AMBER,
+  MODEL_LOCKED: NEUTRAL_LIGHT,
+  EXTRACTING: EMERALD,
+  MERGING: EMERALD,
+  RECONCILING: EMERALD,
+  TRANSLATING: EMERALD,
+  PROVISIONING: EMERALD,
+  COMPLETED: EMERALD,
   FAILED: "bg-red-500/10 text-red-400 border-red-500/20",
 };
 
@@ -26,11 +33,13 @@ const STATUS_LABELS: Record<string, string> = {
   OCR_PROCESSING: "Processing",
   INDEXING: "Indexing",
   AWAITING_QUERY: "Awaiting Query",
-  SCHEMA_PROPOSED: "Review Schema",
-  AWAITING_REVIEW: "Review Schema",
-  SCHEMA_LOCKED: "Locked",
+  PROFILING: "Profiling",
+  MODEL_PROPOSED: "Review Model",
+  AWAITING_REVIEW: "Review Model",
+  MODEL_LOCKED: "Locked",
   EXTRACTING: "Extracting",
   MERGING: "Merging",
+  RECONCILING: "Reconciling",
   TRANSLATING: "Translating",
   PROVISIONING: "Provisioning",
   COMPLETED: "Completed",

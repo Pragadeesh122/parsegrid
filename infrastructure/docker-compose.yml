@@ -48,7 +48,7 @@ services:
     build:
       context: ../apps/api
       dockerfile: Dockerfile
-    command: celery -A app.worker.celery_app worker --loglevel=info -Q ocr,extraction,default --concurrency=2
+    command: celery -A app.worker.celery_app worker --loglevel=info -Q ocr,extraction,merge,translation,default --concurrency=2
     env_file:
       - ../apps/api/.env.local
     environment:

@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.job import JobStatus, JobType, OutputFormat
+from app.schemas.extraction_model import DatabaseModel, DocumentProfile, SectionCandidate
 
 # --- Request Schemas ---
 
@@ -19,10 +20,12 @@ class JobCreateRequest(BaseModel):
     job_type: JobType = JobType.FULL
 
 
-class SchemaApprovalRequest(BaseModel):
-    """Request body for approving/editing a proposed schema."""
+class ModelApprovalRequest(BaseModel):
+    """Request body for approving/editing a proposed extraction model (Phase 7)."""
 
-    locked_schema: dict = Field(..., description="User-approved JSON schema")
+    locked_model: DatabaseModel = Field(
+        ..., description="User-approved DatabaseModel (single_table or table_graph)"
+    )
 
 
 class TargetQueryRequest(BaseModel):
@@ -48,8 +51,10 @@ class JobResponse(BaseModel):
     job_type: JobType
     output_format: OutputFormat
     progress: float
-    proposed_schema: dict | None = None
-    locked_schema: dict | None = None
+    document_profile: DocumentProfile | None = None
+    proposed_model: DatabaseModel | None = None
+    locked_model: DatabaseModel | None = None
+    section_map: list[SectionCandidate] | None = None
     connection_string: str | None = None
     error_message: str | None = None
     page_count: int | None = None
@@ -77,16 +82,22 @@ class JobStatusResponse(BaseModel):
     connection_string: str | None = None
 
 
-class DataPreviewResponse(BaseModel):
-    """Paginated preview of extracted data for the frontend.
-
-    The full extracted_data can be megabytes — this returns only the
-    first 20 records plus the total count and column names.
-    """
+class TablePreview(BaseModel):
+    """Preview payload for one table inside a multi-table extraction result."""
 
     total_records: int
     preview: list[dict]
     columns: list[str]
+
+
+class DataPreviewResponse(BaseModel):
+    """Multi-table preview of extracted data for the frontend (Phase 7).
+
+    The full extracted_data can be megabytes — each table returns only the
+    first 20 records plus the total count and column names.
+    """
+
+    tables: dict[str, TablePreview]
 
 
 class UploadUrlResponse(BaseModel):

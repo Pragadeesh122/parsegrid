@@ -17,8 +17,10 @@ celery_app = Celery(
     backend=settings.redis_url,
     include=[
         "app.worker.tasks.ocr",
+        "app.worker.tasks.profile",
         "app.worker.tasks.extract",
         "app.worker.tasks.merge",
+        "app.worker.tasks.reconcile",
         "app.worker.tasks.translate",
         "app.worker.tasks.rag",
     ],
@@ -35,8 +37,10 @@ celery_app.conf.update(
     # Task routing — dedicated queues
     task_routes={
         "app.worker.tasks.ocr.*": {"queue": "ocr"},
+        "app.worker.tasks.profile.*": {"queue": "ocr"},
         "app.worker.tasks.extract.*": {"queue": "extraction"},
         "app.worker.tasks.merge.*": {"queue": "merge"},
+        "app.worker.tasks.reconcile.*": {"queue": "merge"},
         "app.worker.tasks.translate.*": {"queue": "translation"},
         "app.worker.tasks.rag.*": {"queue": "ocr"},
     },
