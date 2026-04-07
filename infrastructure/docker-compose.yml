@@ -14,15 +14,15 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: parsegrid
-      POSTGRES_PASSWORD: parsegrid
-      POSTGRES_DB: parsegrid
+      POSTGRES_USER: ${POSTGRES_USER:-parsegrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parsegrid}
+      POSTGRES_DB: ${POSTGRES_DB:-parsegrid}
     ports:
       - "5436:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U parsegrid"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parsegrid}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,6 +44,67 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    env_file:
+      - ../apps/api/.env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-parsegrid}:${POSTGRES_PASSWORD:-parsegrid}@postgres:5432/${POSTGRES_DB:-parsegrid}
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - ../apps/web/.env.local
+    environment:
+      INTERNAL_API_URL: http://api:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXTAUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   celery-worker:
     build:
       context: ../apps/api
@@ -52,7 +113,7 @@ services:
     env_file:
       - ../apps/api/.env.local
     environment:
-      DATABASE_URL: postgresql+asyncpg://parsegrid:parsegrid@postgres:5432/parsegrid
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-parsegrid}:${POSTGRES_PASSWORD:-parsegrid}@postgres:5432/${POSTGRES_DB:-parsegrid}
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
     depends_on:
