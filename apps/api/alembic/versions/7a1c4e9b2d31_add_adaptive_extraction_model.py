@@ -18,9 +18,9 @@ Phase 7 swaps the flat schema columns for an adaptive `DatabaseModel`:
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "7a1c4e9b2d31"

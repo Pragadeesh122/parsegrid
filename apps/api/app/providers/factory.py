@@ -8,7 +8,12 @@ the open-core providers (PaddleOCR + OpenAI).
 from functools import lru_cache
 
 from app.core.config import settings
-from app.providers import BaseEmbeddingProvider, BaseLLMProvider, BaseOCRProvider, BaseOutputProvider
+from app.providers import (
+    BaseEmbeddingProvider,
+    BaseLLMProvider,
+    BaseOCRProvider,
+    BaseOutputProvider,
+)
 
 
 @lru_cache(maxsize=1)

@@ -7,9 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
-from app.core.storage import delete_object_from_s3, delete_prefix_from_s3
 from app.core.security import TokenPayload
-from app.models.job import Job, JobStatus
+from app.core.storage import delete_object_from_s3, delete_prefix_from_s3
+from app.models.job import Job, JobStatus, JobType
 from app.providers.factory import get_output_provider
 from app.schemas.job import (
     DataPreviewResponse,

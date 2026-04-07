@@ -8,8 +8,8 @@ Switching environments requires ONLY changing env vars — zero code changes.
 """
 
 import boto3
-from botocore.exceptions import ClientError
 from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
 
 from app.core.config import settings
 
