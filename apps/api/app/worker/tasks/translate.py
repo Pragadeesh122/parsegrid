@@ -30,8 +30,8 @@ def translate_and_provision(self, job_id: str):
         publish_status(job_id, "TRANSLATING", 0.0)
         update_job(job_id, status="TRANSLATING", progress=0.0)
 
-        # 1. Load locked_model + reconciled data.
-        job = get_job_field(job_id, "locked_model", "extracted_data")
+        # 1. Load locked_model + reconciled data + output format.
+        job = get_job_field(job_id, "locked_model", "extracted_data", "output_format")
         locked_raw = _coerce_json(job["locked_model"])
         if not locked_raw:
             raise ValueError("locked_model missing — cannot translate")
@@ -40,6 +40,8 @@ def translate_and_provision(self, job_id: str):
         extracted_raw = _coerce_json(job["extracted_data"]) or {}
         if not isinstance(extracted_raw, dict):
             raise ValueError("extracted_data is not a dict[table_name, rows]")
+
+        output_format = _coerce_output_format(job.get("output_format"))
 
         # 2. Build DDL.
         from app.services.ddl import build_ddl_with_notes
@@ -64,7 +66,7 @@ def translate_and_provision(self, job_id: str):
             ddl_statements=ddl_statements,
             data=extracted_raw,
             model=normalized_model,
-            output_format="SQL",
+            output_format=output_format,
         )
 
         publish_status(job_id, "PROVISIONING", 90.0)
@@ -106,3 +108,11 @@ def _coerce_json(value: Any) -> Any:
     if isinstance(value, str):
         return json.loads(value)
     return value
+
+
+def _coerce_output_format(value: Any) -> str:
+    if value is None:
+        return "SQL"
+    if hasattr(value, "value"):
+        return str(value.value).upper()
+    return str(value).upper()

@@ -56,19 +56,30 @@ def get_output_provider(output_format: str = "SQL") -> BaseOutputProvider:
     """Return the configured output provider for the given format.
 
     Default: PostgresOutputProvider (SQL)
-    Future: Neo4jOutputProvider (GRAPH), VectorOutputProvider (VECTOR)
+    Also supported: Neo4jOutputProvider (GRAPH), QdrantOutputProvider (VECTOR)
     """
-    if output_format == "SQL":
+    normalized = (
+        output_format.value
+        if hasattr(output_format, "value")
+        else str(output_format)
+    ).upper()
+
+    if normalized == "SQL":
         from app.providers.output_postgres import PostgresOutputProvider
 
         return PostgresOutputProvider()
 
-    # Future providers:
-    # if output_format == "GRAPH":
-    #     from app.providers.output_neo4j import Neo4jOutputProvider
-    #     return Neo4jOutputProvider()
-    # if output_format == "VECTOR":
-    #     from app.providers.output_vector import VectorOutputProvider
-    #     return VectorOutputProvider()
+    if normalized == "GRAPH":
+        from app.providers.output_neo4j import Neo4jOutputProvider
 
-    raise ValueError(f"Unsupported output format: {output_format}. Currently only SQL is supported.")
+        return Neo4jOutputProvider()
+
+    if normalized == "VECTOR":
+        from app.providers.output_vector_qdrant import QdrantOutputProvider
+
+        return QdrantOutputProvider()
+
+    raise ValueError(
+        f"Unsupported output format: {output_format}. "
+        "Supported formats: SQL, GRAPH, VECTOR."
+    )

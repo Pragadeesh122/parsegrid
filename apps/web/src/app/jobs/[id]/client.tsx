@@ -303,6 +303,7 @@ export default function JobDetailClient({
           {job.status === "COMPLETED" && job.connection_string && (
             <ConnectionString
               connectionString={job.connection_string}
+              outputFormat={job.output_format}
               provisionedRows={job.provisioned_rows}
               provisionedAt={job.provisioned_at}
             />

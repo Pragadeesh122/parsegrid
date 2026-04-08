@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     # --- OpenAI ---
     openai_api_key: str = ""
 
+    # --- Neo4j (GRAPH output provider) ---
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "parsegrid"
+    neo4j_database: str = "neo4j"
+
+    # --- Qdrant (VECTOR output provider) ---
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+
     # --- LlamaParse ---
     llama_cloud_api_key: str = ""
 

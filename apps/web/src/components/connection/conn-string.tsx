@@ -8,16 +8,19 @@ import { useState } from "react";
 
 interface ConnectionStringProps {
   connectionString: string;
+  outputFormat?: string;
   provisionedRows?: number | null;
   provisionedAt?: string | null;
 }
 
 export function ConnectionString({
   connectionString,
+  outputFormat = "SQL",
   provisionedRows,
   provisionedAt,
 }: ConnectionStringProps) {
   const [copied, setCopied] = useState(false);
+  const normalizedFormat = outputFormat.toUpperCase();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(connectionString);
@@ -42,7 +45,11 @@ export function ConnectionString({
         <div>
           <h4 className="font-semibold text-emerald-400">Data Ready</h4>
           <p className="text-sm text-zinc-400">
-            Connect to your structured data using the connection string below.
+            {normalizedFormat === "GRAPH"
+              ? "Connect to your graph output using the resource below."
+              : normalizedFormat === "VECTOR"
+                ? "Connect to your vector output using the collection endpoint below."
+                : "Connect to your structured data using the connection string below."}
           </p>
         </div>
       </div>
@@ -85,7 +92,11 @@ export function ConnectionString({
       </div>
 
       <p className="text-xs text-zinc-600">
-        Use this connection string with psql, DBeaver, or any PostgreSQL client.
+        {normalizedFormat === "GRAPH"
+          ? "Use this with Neo4j Browser, Cypher clients, or Bolt-compatible tooling."
+          : normalizedFormat === "VECTOR"
+            ? "Use this with Qdrant Cloud UI/API or any Qdrant client SDK."
+            : "Use this connection string with psql, DBeaver, or any PostgreSQL client."}
       </p>
     </div>
   );

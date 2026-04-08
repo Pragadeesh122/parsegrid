@@ -157,7 +157,7 @@ async def delete_job(
         if hasattr(job.output_format, "value")
         else str(job.output_format)
     )
-    if job.output_schema_name and output_format == "SQL":
+    if job.output_schema_name:
         provider = get_output_provider(output_format)
         provider.delete_output(job.output_schema_name)
 
