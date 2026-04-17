@@ -1,8 +1,13 @@
 """ParseGrid — Reconciliation task (Phase 7).
 
-Runs deterministic normalization, FK resolution, and provenance attachment
-on the bucketed extraction output, then dispatches translation +
-provisioning. No LLM is used here.
+Runs normalization, entity resolution, FK resolution, and provenance
+attachment on the bucketed extraction output, then dispatches translation
++ provisioning.
+
+Entity resolution uses gpt-4o-mini but only fires when the cheap
+``needs_resolution()`` pre-check detects duplicate normalized PK tuples
+(i.e., the same entity extracted multiple times across chunks). For
+documents with clean unique PKs no LLM call is made.
 """
 
 from __future__ import annotations
