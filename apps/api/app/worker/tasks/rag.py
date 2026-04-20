@@ -160,4 +160,16 @@ def index_document(self, job_id: str):
         logger.exception(f"Job {job_id}: indexing failed: {exc}")
         publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
         update_job(job_id, status="FAILED", error_message=str(exc))
+
+        # Don't retry permanent S3 errors (missing file, bad key) — retrying
+        # won't help and wastes a worker slot for 3×60s.
+        from botocore.exceptions import ClientError
+
+        if isinstance(exc, ClientError) and exc.response["Error"]["Code"] in (
+            "NoSuchKey",
+            "NoSuchBucket",
+            "404",
+        ):
+            raise
+
         raise self.retry(exc=exc, countdown=60)

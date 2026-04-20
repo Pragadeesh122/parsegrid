@@ -19,7 +19,9 @@ _JOB_ID_ARG_INDEX: dict[str, int] = {
     "app.worker.tasks.extract.run_extraction": 0,
     "app.worker.tasks.extract.extract_chunk": 0,
     "app.worker.tasks.merge.merge_results": 1,
+    "app.worker.tasks.reconcile.reconcile_and_translate": 0,
     "app.worker.tasks.translate.translate_and_provision": 0,
+    "app.worker.tasks.rag.index_document": 0,
 }
 
 

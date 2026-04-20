@@ -47,9 +47,7 @@ _PY_TYPE_MAP: dict[str, type] = {
 }
 
 
-def _table_def_to_pydantic(
-    table: TableDef, link_targets: list[RelationshipDef]
-) -> type[BaseModel]:
+def _table_def_to_pydantic(table: TableDef, link_targets: list[RelationshipDef]) -> type[BaseModel]:
     """Build a strict Pydantic model for a single TableDef.
 
     The resulting model has one field per declared column, plus one extra
@@ -108,8 +106,8 @@ class OpenAILLMProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        discovery_model: str = "gpt-4o",
-        extraction_model: str = "gpt-4o-mini",
+        discovery_model: str = "gpt-5.4",
+        extraction_model: str = "gpt-5.4",
     ):
         self.client = OpenAI(api_key=api_key or settings.openai_api_key)
         self.discovery_model = discovery_model
@@ -127,7 +125,7 @@ class OpenAILLMProvider(BaseLLMProvider):
     ) -> DatabaseModel:
         """Propose a typed DatabaseModel from sampled document text.
 
-        Temperature 0.1, gpt-4o by default. The response is parsed against
+        Temperature 0.1, gpt-5.4 by default. The response is parsed against
         DatabaseModel via OpenAI strict structured outputs, so the return
         value is guaranteed to validate.
         """
@@ -236,8 +234,7 @@ Hard rules:
             link_block = (
                 "\n\nThis table also has foreign-key columns. For each row, "
                 "extract the natural-key value of the parent record (e.g., the "
-                "borrower_id, the invoice_number) — never a synthetic id.\n"
-                + "\n".join(link_lines)
+                "borrower_id, the invoice_number) — never a synthetic id.\n" + "\n".join(link_lines)
             )
 
         system_prompt = (
@@ -268,9 +265,7 @@ Hard rules:
         parsed = completion.choices[0].message.parsed
         if parsed is None:
             refusal = completion.choices[0].message.refusal or "no parsed output"
-            logger.warning(
-                f"extract_table({table.table_name}): refusal/null parsed: {refusal}"
-            )
+            logger.warning(f"extract_table({table.table_name}): refusal/null parsed: {refusal}")
             data: dict[str, Any] = {"rows": []}
         else:
             data = parsed.model_dump()

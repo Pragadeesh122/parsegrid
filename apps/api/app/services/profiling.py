@@ -23,7 +23,7 @@ from collections import Counter
 from typing import Any
 
 # Cap on the number of pages we feed to the LLM. ~15 pages of OCR text fits
-# comfortably under the gpt-4o context budget while leaving headroom for the
+# comfortably under the gpt-5.4 context budget while leaving headroom for the
 # system prompt and meta-schema definition.
 MAX_SAMPLED_PAGES = 15
 
@@ -103,18 +103,14 @@ def profile_document(
     return sampled, dict(histogram)
 
 
-def build_profile_context(
-    sampled_pages: list[int], ocr_json: dict[str, Any]
-) -> str:
+def build_profile_context(sampled_pages: list[int], ocr_json: dict[str, Any]) -> str:
     """Concatenate sampled-page text with region-type markers for the LLM.
 
     Each page is prefixed with `--- Page N (types: ...) ---` so the LLM can
     see structural variation between pages without us shipping the whole
     layout JSON.
     """
-    pages_by_number = {
-        p.get("page_number"): p for p in (ocr_json.get("pages") or [])
-    }
+    pages_by_number = {p.get("page_number"): p for p in (ocr_json.get("pages") or [])}
     sampled_set = set(sampled_pages)
 
     blocks: list[str] = []
@@ -125,9 +121,7 @@ def build_profile_context(
         regions = page.get("regions") or []
         types = sorted({r.get("region_type") or "unknown" for r in regions})
         text = "\n".join(
-            (r.get("text") or "").strip()
-            for r in regions
-            if (r.get("text") or "").strip()
+            (r.get("text") or "").strip() for r in regions if (r.get("text") or "").strip()
         )
         header = f"--- Page {page_number} (types: {', '.join(types) or 'none'}) ---"
         blocks.append(f"{header}\n{text}")
