@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"true", "t", "yes", "y", "1"}
 _FALSE_VALUES = {"false", "f", "no", "n", "0"}
-_CURRENCY_AND_THOUSANDS_RE = re.compile(r"[\u2212$€£¥,\s]")
+_CURRENCY_AND_THOUSANDS_RE = re.compile(r"[$€£¥,\s]")
+
+
+def _clean_numeric(value: Any) -> str:
+    """Strip currency symbols / thousands separators, mapping unicode minus to ASCII."""
+    return _CURRENCY_AND_THOUSANDS_RE.sub("", str(value).replace("\u2212", "-"))
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +88,7 @@ def normalize_value(value: Any, column_type: str) -> Any:
             return int(value)
         if isinstance(value, (int, float)):
             return int(value)
-        cleaned = _CURRENCY_AND_THOUSANDS_RE.sub("", str(value))
+        cleaned = _clean_numeric(value)
         try:
             return int(float(cleaned))
         except ValueError:
@@ -92,7 +97,7 @@ def normalize_value(value: Any, column_type: str) -> Any:
     if column_type == "float":
         if isinstance(value, (int, float)):
             return float(value)
-        cleaned = _CURRENCY_AND_THOUSANDS_RE.sub("", str(value))
+        cleaned = _clean_numeric(value)
         try:
             return float(cleaned)
         except ValueError:
