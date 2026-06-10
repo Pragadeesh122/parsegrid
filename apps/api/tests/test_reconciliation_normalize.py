@@ -18,7 +18,7 @@ class TestString:
     def test_strips_and_nfc_normalizes(self):
         assert normalize_value("  Acme Corp  ", "string") == "Acme Corp"
         # Decomposed e + combining acute must collapse to the precomposed é.
-        assert normalize_value("Café", "string") == "Café"
+        assert normalize_value("Cafe\u0301", "string") == "Caf\u00e9"
 
     def test_non_string_coerced(self):
         assert normalize_value(42, "string") == "42"
