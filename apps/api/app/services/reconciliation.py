@@ -25,7 +25,6 @@ from typing import Any
 from dateutil import parser as dateutil_parser
 
 from app.schemas.extraction_model import (
-    ColumnDef,
     DatabaseModel,
     RelationshipDef,
     TableDef,
