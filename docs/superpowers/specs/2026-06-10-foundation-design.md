@@ -39,15 +39,18 @@ All backend, pytest, extending the existing `apps/api/tests/` convention
 
 ### Tier 1 — pure-logic unit tests (the bulk)
 
-No DB, no network. The only test double is a fake LLM provider injected through
-the existing provider pattern — no OpenAI calls in tests, ever.
+No DB, no network. The only test double is a fake `openai.OpenAI` client
+installed via monkeypatch (`entity_resolution` constructs its client inline
+rather than going through the provider factory) — no OpenAI calls in tests,
+ever.
 
 - **`services/reconciliation.py`**
   - `normalize_value`: every type coercion — booleans (`"yes"/"n"/"1"`),
     currency and thousands-separator strings (incl. unicode minus), dates via
     dateutil, whitespace/unicode normalization, null-ish values.
-  - `needs_resolution` pre-check: fires only on duplicate normalized PK tuples
-    (this gate decides whether the LLM is called at all).
+  - `needs_resolution` pre-check: fires for any table with two or more rows;
+    single-row tables skip the LLM entirely (this gate decides whether the LLM
+    is called at all).
   - Entity resolution merge behavior against the fake LLM.
   - `resolve_foreign_keys`: token-set fuzzy matching, incl. near-miss and
     no-match cases.
@@ -117,10 +120,14 @@ shape touches the frontend for marginal gain).
 
 ### Fix 4: Upload constraints
 
-Presigned uploads gain a server-enforced size cap via `content-length-range`
-in the presigned POST policy (default 100 MB, configurable) and a content-type
-allowlist (PDF, PNG, JPEG, TIFF, WebP). Magic-byte validation is out of scope —
-OCR already fails gracefully on garbage files.
+Uploads use presigned **PUT** (not POST policies), and the frontend currently
+uses the `/upload/direct` path. Enforcement: the direct path checks actual
+byte length and content type server-side; the presigned path gains a required
+`file_size` parameter validated against the cap, with `ContentLength` included
+in the signed parameters so the client cannot exceed the declared size.
+Defaults: 100 MB cap, content-type allowlist (PDF, PNG, JPEG, TIFF, WebP) —
+both configurable. Magic-byte validation is out of scope — OCR already fails
+gracefully on garbage files.
 
 ## 3. CI design
 
