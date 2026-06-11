@@ -65,8 +65,9 @@ async def direct_upload(
     """Upload a file through FastAPI (for small files < 10MB).
     For larger files, use the presigned URL endpoint instead.
     """
+    # Validate against the parsed part size BEFORE buffering the body in RAM.
+    _validate_upload(file.content_type or "application/octet-stream", file.size or 0)
     contents = await file.read()
-    _validate_upload(file.content_type or "application/octet-stream", len(contents))
     file_key = f"uploads/{user.sub}/{uuid.uuid4()}/{file.filename}"
     upload_file_to_s3(
         file_bytes=contents,
