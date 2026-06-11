@@ -53,3 +53,9 @@ class TestPublicErrorMessage:
     def test_plain_errors_keep_their_message(self):
         msg = public_error_message(KeyError("missing_table"))
         assert "missing_table" in msg
+
+    def test_scrubs_libpq_keyword_passwords(self):
+        exc = Exception("connection failed: host=db.internal password=hunter2 dbname=x")
+        msg = public_error_message(exc)
+        assert "hunter2" not in msg
+        assert "host=db.internal" in msg

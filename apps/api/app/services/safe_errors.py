@@ -23,6 +23,9 @@ _DEFAULT_PORTS = {
 }
 
 _DSN_RE = re.compile(r"\b[a-z][a-z0-9+]*://\S+", re.IGNORECASE)
+# libpq keyword DSNs ("host=... password=... dbname=...") have no scheme,
+# so _DSN_RE misses them — redact the credential tokens directly.
+_KEYWORD_SECRET_RE = re.compile(r"\b(password|pwd)\s*=\s*\S+", re.IGNORECASE)
 
 _AUTH_MARKERS = ("password", "auth", "permission denied", "access denied", "unauthorized")
 _REACH_MARKERS = (
@@ -90,4 +93,5 @@ def public_error_message(exc: Exception) -> str:
     """Job error_message safe for the owning user: keeps the exception type
     and message but scrubs any embedded DSN (which may carry credentials)."""
     msg = _DSN_RE.sub("<connection-string>", str(exc))
+    msg = _KEYWORD_SECRET_RE.sub(r"\1=<redacted>", msg)
     return f"{type(exc).__name__}: {msg[:300]}"
