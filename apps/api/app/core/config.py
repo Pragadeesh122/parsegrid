@@ -1,5 +1,6 @@
 """ParseGrid API — Configuration via pydantic-settings."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +58,20 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.fastapi_env == "production"
+
+    @model_validator(mode="after")
+    def _enforce_production_secrets(self) -> "Settings":
+        """Refuse to boot in production with shipped development defaults."""
+        if self.fastapi_env != "production":
+            return self
+        problems: list[str] = []
+        if self.auth_secret == "parsegrid-dev-secret-minimum-32-characters-long":
+            problems.append("AUTH_SECRET is still the shipped development default")
+        if self.s3_access_key == "minioadmin" or self.s3_secret_key == "minioadmin":
+            problems.append("S3_ACCESS_KEY/S3_SECRET_KEY are still 'minioadmin'")
+        if problems:
+            raise ValueError("refusing to start in production: " + "; ".join(problems))
+        return self
 
 
 settings = Settings()
