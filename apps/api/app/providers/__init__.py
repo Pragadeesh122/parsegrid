@@ -49,9 +49,7 @@ class OCRResult:
     @property
     def full_text(self) -> str:
         """Full document text across all pages."""
-        return "\n\n".join(
-            f"--- Page {p.page_number} ---\n{p.full_text}" for p in self.pages
-        )
+        return "\n\n".join(f"--- Page {p.page_number} ---\n{p.full_text}" for p in self.pages)
 
 
 class BaseOCRProvider(ABC):

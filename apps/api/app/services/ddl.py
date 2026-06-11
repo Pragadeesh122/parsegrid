@@ -24,8 +24,6 @@ from app.schemas.extraction_model import (
     ColumnDef,
     ColumnType,
     DatabaseModel,
-    RelationshipDef,
-    TableDef,
 )
 
 # ---------------------------------------------------------------------------
@@ -217,9 +215,7 @@ def validate_model(model: DatabaseModel) -> ValidationResult:
                     f"collides with a reserved provenance/synthetic column"
                 )
             if col.name in seen_col_names:
-                raise ValueError(
-                    f"duplicate column {col.name!r} on table {table.table_name!r}"
-                )
+                raise ValueError(f"duplicate column {col.name!r} on table {table.table_name!r}")
             seen_col_names.add(col.name)
 
         table_columns[table.table_name] = {c.name: c for c in table.columns}
@@ -231,15 +227,11 @@ def validate_model(model: DatabaseModel) -> ValidationResult:
         rel.references_table = _to_snake_case(rel.references_table)
         rel.references_column = _to_snake_case(rel.references_column)
         if rel.composite_key_columns:
-            rel.composite_key_columns = [
-                _to_snake_case(c) for c in rel.composite_key_columns
-            ]
+            rel.composite_key_columns = [_to_snake_case(c) for c in rel.composite_key_columns]
 
         if rel.source_table not in table_columns:
             rel.enabled = False
-            notes.append(
-                f"relationship downgraded: source_table {rel.source_table!r} not in model"
-            )
+            notes.append(f"relationship downgraded: source_table {rel.source_table!r} not in model")
             continue
         if rel.references_table not in table_columns:
             rel.enabled = False
@@ -254,13 +246,15 @@ def validate_model(model: DatabaseModel) -> ValidationResult:
         if rel.source_column not in src_cols:
             rel.enabled = False
             notes.append(
-                f"relationship downgraded: column {rel.source_table}.{rel.source_column} not declared"
+                f"relationship downgraded: column {rel.source_table}.{rel.source_column} "
+                "not declared"
             )
             continue
         if rel.references_column not in ref_cols:
             rel.enabled = False
             notes.append(
-                f"relationship downgraded: column {rel.references_table}.{rel.references_column} not declared"
+                f"relationship downgraded: column {rel.references_table}."
+                f"{rel.references_column} not declared"
             )
             continue
         if not ref_cols[rel.references_column].is_primary_key:
@@ -308,9 +302,7 @@ def _emit_ddl(normalized: DatabaseModel, schema_name: str) -> list[str]:
             cols_sql.append(f'"{prov_name}" {prov_type}')
 
         body = ",\n    ".join(cols_sql)
-        statements.append(
-            f'CREATE TABLE {qschema}."{table.table_name}" (\n    {body}\n)'
-        )
+        statements.append(f'CREATE TABLE {qschema}."{table.table_name}" (\n    {body}\n)')
 
     # 2. UNIQUE constraints on primary-key columns (one per column).
     for table in normalized.tables:

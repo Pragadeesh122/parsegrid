@@ -140,11 +140,7 @@ async def delete_job(
             ),
         )
 
-    upload_prefix = (
-        f"{job.file_key.rsplit('/', 1)[0]}/"
-        if "/" in job.file_key
-        else None
-    )
+    upload_prefix = f"{job.file_key.rsplit('/', 1)[0]}/" if "/" in job.file_key else None
     if upload_prefix:
         delete_prefix_from_s3(upload_prefix)
     else:
@@ -153,9 +149,7 @@ async def delete_job(
     delete_prefix_from_s3(f"extracted/{job_id}/")
 
     output_format = (
-        job.output_format.value
-        if hasattr(job.output_format, "value")
-        else str(job.output_format)
+        job.output_format.value if hasattr(job.output_format, "value") else str(job.output_format)
     )
     if job.output_schema_name:
         provider = get_output_provider(output_format)

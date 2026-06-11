@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.schemas.extraction_model import DocumentProfile
 from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
-from app.worker.db import get_job_field, publish_status, update_job
+from app.worker.db import publish_status, update_job
 
 logger = logging.getLogger(__name__)
 

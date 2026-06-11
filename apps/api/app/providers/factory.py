@@ -59,9 +59,7 @@ def get_output_provider(output_format: str = "SQL") -> BaseOutputProvider:
     Also supported: Neo4jOutputProvider (GRAPH), QdrantOutputProvider (VECTOR)
     """
     normalized = (
-        output_format.value
-        if hasattr(output_format, "value")
-        else str(output_format)
+        output_format.value if hasattr(output_format, "value") else str(output_format)
     ).upper()
 
     if normalized == "SQL":
@@ -80,6 +78,5 @@ def get_output_provider(output_format: str = "SQL") -> BaseOutputProvider:
         return QdrantOutputProvider()
 
     raise ValueError(
-        f"Unsupported output format: {output_format}. "
-        "Supported formats: SQL, GRAPH, VECTOR."
+        f"Unsupported output format: {output_format}. Supported formats: SQL, GRAPH, VECTOR."
     )

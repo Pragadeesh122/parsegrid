@@ -20,15 +20,11 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
-    )
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
-    return bcrypt.hashpw(
-        password.encode("utf-8"), bcrypt.gensalt()
-    ).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 @router.post(
@@ -41,7 +37,7 @@ async def verify_credentials(
     db: AsyncSession = Depends(get_db_session),
 ) -> User:
     """Verifies a user's plain-text password and returns the User object context.
-    
+
     This is called exclusively by NextAuth's `authorize()` function.
     """
     query = select(User).where(User.email == body.email)
@@ -133,4 +129,3 @@ async def oauth_upsert(
     await db.commit()
     await db.refresh(user)
     return user
-

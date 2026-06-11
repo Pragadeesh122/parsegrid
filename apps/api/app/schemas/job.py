@@ -31,7 +31,9 @@ class ModelApprovalRequest(BaseModel):
 class TargetQueryRequest(BaseModel):
     """Request body for submitting a natural language query for targeted extraction."""
 
-    query: str = Field(..., min_length=1, max_length=2000, description="Natural language extraction query")
+    query: str = Field(
+        ..., min_length=1, max_length=2000, description="Natural language extraction query"
+    )
 
 
 # --- Response Schemas ---

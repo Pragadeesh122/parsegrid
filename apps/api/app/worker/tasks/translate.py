@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.schemas.extraction_model import DatabaseModel
@@ -73,7 +73,7 @@ def translate_and_provision(self, job_id: str):
         publish_status(job_id, "PROVISIONING", 90.0)
 
         # 4. Audit + completion.
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         update_job(
             job_id,
             status="COMPLETED",

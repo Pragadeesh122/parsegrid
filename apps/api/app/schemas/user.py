@@ -35,4 +35,3 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: str | None
-

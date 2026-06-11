@@ -234,8 +234,7 @@ class PaddleOCRProvider(BaseOCRProvider):
         doc.close()
 
         logger.info(
-            f"Smart router: {fast_count} native + {slow_count} OCR "
-            f"= {len(pages)} total pages"
+            f"Smart router: {fast_count} native + {slow_count} OCR = {len(pages)} total pages"
         )
 
         return OCRResult(

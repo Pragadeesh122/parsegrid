@@ -82,7 +82,10 @@ class SectionCandidate(BaseModel):
     page_range: tuple[int, int]
     assigned_tables: list[str] = Field(
         ...,
-        description="table_names from DatabaseModel.tables. Empty list = unassigned (cover pages, appendices).",
+        description=(
+            "table_names from DatabaseModel.tables. "
+            "Empty list = unassigned (cover pages, appendices)."
+        ),
     )
 
 

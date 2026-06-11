@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from app.core.config import settings
 from app.providers import BaseLLMProvider, LLMResponse
 from app.schemas.extraction_model import (
-    ColumnDef,
     DatabaseModel,
     DocumentProfile,
     RelationshipDef,

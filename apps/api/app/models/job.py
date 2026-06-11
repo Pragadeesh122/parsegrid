@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, generate_uuid
 
 
-class JobStatus(str, enum.Enum):
+class JobStatus(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(status) == "VALUE"
     """Job lifecycle states (matches state machine in implementation plan).
 
     Phase 7 introduced PROFILING / MODEL_PROPOSED / MODEL_LOCKED / RECONCILING
@@ -41,14 +41,14 @@ class JobStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
-class JobType(str, enum.Enum):
+class JobType(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(status) == "VALUE"
     """Extraction mode: full document vs targeted RAG."""
 
     FULL = "FULL"
     TARGETED = "TARGETED"
 
 
-class OutputFormat(str, enum.Enum):
+class OutputFormat(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(status) == "VALUE"
     """Supported output database formats."""
 
     SQL = "SQL"
@@ -219,4 +219,7 @@ class DocumentChunk(Base):
     job: Mapped["Job"] = relationship(back_populates="chunks")
 
     def __repr__(self) -> str:
-        return f"<DocumentChunk(id={self.id!r}, job_id={self.job_id!r}, chunk_index={self.chunk_index})>"
+        return (
+            f"<DocumentChunk(id={self.id!r}, job_id={self.job_id!r}, "
+            f"chunk_index={self.chunk_index})>"
+        )
