@@ -26,6 +26,7 @@ from app.schemas.extraction_model import (
     SectionCandidate,
     TableDef,
 )
+from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
 from app.worker.db import get_job_field, publish_status, update_job
 
@@ -95,9 +96,7 @@ def run_extraction(self, job_id: str):
         update_job(job_id, status="EXTRACTING", progress=0.0)
 
         # 1. Load context.
-        job = get_job_field(
-            job_id, "locked_model", "job_type", "target_chunks", "section_map"
-        )
+        job = get_job_field(job_id, "locked_model", "job_type", "target_chunks", "section_map")
         locked_model_raw = _coerce_json(job["locked_model"])
         if not locked_model_raw:
             raise ValueError("locked_model is empty — cannot extract")
@@ -122,9 +121,7 @@ def run_extraction(self, job_id: str):
                 }
                 for i, chunk in enumerate(target_chunks_raw)
             ]
-            logger.info(
-                f"Job {job_id}: TARGETED mode — {len(base_chunks)} retrieved chunks"
-            )
+            logger.info(f"Job {job_id}: TARGETED mode — {len(base_chunks)} retrieved chunks")
         else:
             from app.core.storage import get_s3_client
 
@@ -134,9 +131,7 @@ def run_extraction(self, job_id: str):
             )
             full_text = response["Body"].read().decode("utf-8")
             base_chunks = chunk_text(full_text, chunk_size=3000, overlap=500)
-            logger.info(
-                f"Job {job_id}: FULL mode — {len(base_chunks)} chunks from full text"
-            )
+            logger.info(f"Job {job_id}: FULL mode — {len(base_chunks)} chunks from full text")
 
         publish_status(job_id, "EXTRACTING", 10.0)
 
@@ -173,9 +168,7 @@ def run_extraction(self, job_id: str):
                 )
 
         if not signatures:
-            raise ValueError(
-                "no extraction tasks scheduled — locked_model has no tables or chunks"
-            )
+            raise ValueError("no extraction tasks scheduled — locked_model has no tables or chunks")
 
         from app.worker.tasks.merge import merge_results
 
@@ -187,8 +180,8 @@ def run_extraction(self, job_id: str):
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: extraction orchestration failed")
-        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        update_job(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
+        update_job(job_id, status="FAILED", error_message=public_error_message(exc))
         raise
 
 
@@ -206,9 +199,7 @@ def _coerce_json(value: Any) -> Any:
     return value
 
 
-def _allowed_pages_for_table(
-    table_name: str, sections: list[SectionCandidate]
-) -> set[int] | None:
+def _allowed_pages_for_table(table_name: str, sections: list[SectionCandidate]) -> set[int] | None:
     """Compute the page set this table should see.
 
     Returns None when there is no section routing (table sees every chunk).
@@ -240,6 +231,4 @@ def _filter_chunks_by_pages(
         return chunks
     if not allowed_pages:
         return []
-    return [
-        ch for ch in chunks if any(p in allowed_pages for p in (ch.get("pages") or []))
-    ]
+    return [ch for ch in chunks if any(p in allowed_pages for p in (ch.get("pages") or []))]

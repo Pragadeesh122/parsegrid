@@ -27,7 +27,7 @@ class QdrantOutputProvider(BaseOutputProvider):
 
     def test_connection(self, connection_string: str) -> bool:
         url, api_key = _parse_qdrant_connection(connection_string)
-        client = self._build_client(url, api_key)
+        client = self._build_client(url, api_key, timeout=5)
         # Raises if unreachable / unauthorized.
         client.get_collections()
         return True
@@ -124,8 +124,8 @@ class QdrantOutputProvider(BaseOutputProvider):
         if _collection_exists(client, schema_name):
             client.delete_collection(collection_name=schema_name)
 
-    def _build_client(self, url: str, api_key: str | None) -> QdrantClient:
-        return QdrantClient(url=url, api_key=api_key)
+    def _build_client(self, url: str, api_key: str | None, **client_kwargs) -> QdrantClient:
+        return QdrantClient(url=url, api_key=api_key, **client_kwargs)
 
 
 def _parse_qdrant_connection(connection_string: str | None) -> tuple[str, str | None]:
@@ -196,4 +196,3 @@ def _coerce_payload(value: Any) -> Any:
     if callable(iso):
         return iso()
     return str(value)
-

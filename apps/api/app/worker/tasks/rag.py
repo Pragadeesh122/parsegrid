@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
 from app.worker.db import get_sync_engine, publish_status, update_job
 
@@ -56,11 +57,13 @@ def _chunk_text_by_tokens(
             continue
 
         if len(current_text) + len(stripped) + 1 > chunk_size_chars and current_text:
-            chunks.append({
-                "chunk_index": len(chunks),
-                "text": current_text.strip(),
-                "page_number": current_page,
-            })
+            chunks.append(
+                {
+                    "chunk_index": len(chunks),
+                    "text": current_text.strip(),
+                    "page_number": current_page,
+                }
+            )
             # Overlap: keep the tail of the current chunk
             if len(current_text) > overlap_chars:
                 current_text = current_text[-overlap_chars:] + "\n" + stripped
@@ -70,11 +73,13 @@ def _chunk_text_by_tokens(
             current_text += ("\n" if current_text else "") + stripped
 
     if current_text.strip():
-        chunks.append({
-            "chunk_index": len(chunks),
-            "text": current_text.strip(),
-            "page_number": current_page,
-        })
+        chunks.append(
+            {
+                "chunk_index": len(chunks),
+                "text": current_text.strip(),
+                "page_number": current_page,
+            }
+        )
 
     return chunks
 
@@ -158,8 +163,8 @@ def index_document(self, job_id: str):
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: indexing failed: {exc}")
-        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        update_job(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
+        update_job(job_id, status="FAILED", error_message=public_error_message(exc))
 
         # Don't retry permanent S3 errors (missing file, bad key) — retrying
         # won't help and wastes a worker slot for 3×60s.

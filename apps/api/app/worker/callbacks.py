@@ -9,6 +9,8 @@ import logging
 
 from celery.signals import task_failure
 
+from app.services.safe_errors import public_error_message
+
 logger = logging.getLogger(__name__)
 
 # Map task names → position of job_id in the task's argument list.
@@ -52,7 +54,7 @@ def on_task_failure(sender, task_id, exception, args, kwargs, traceback, einfo, 
         )
         return
 
-    error_msg = f"Task failed: {type(exception).__name__}: {exception}"
+    error_msg = f"Task failed: {public_error_message(exception)}"
     logger.error(f"Job {job_id}: {error_msg}")
 
     try:

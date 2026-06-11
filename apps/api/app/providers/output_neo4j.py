@@ -25,10 +25,8 @@ class Neo4jOutputProvider(BaseOutputProvider):
     """Provisions extracted rows to Neo4j as a scoped property graph."""
 
     def test_connection(self, connection_string: str) -> bool:
-        uri, user, password, database = _parse_neo4j_connection(
-            connection_string=connection_string
-        )
-        driver = self._build_driver(uri, user, password)
+        uri, user, password, database = _parse_neo4j_connection(connection_string=connection_string)
+        driver = self._build_driver(uri, user, password, connection_timeout=5.0)
         try:
             with driver.session(database=database) as session:
                 session.run("RETURN 1 AS ok").consume()
@@ -80,11 +78,13 @@ class Neo4jOutputProvider(BaseOutputProvider):
                             pk_value = row.get(pk_col)
                             if pk_value is None:
                                 continue
-                            primary_lookup[(
-                                table.table_name,
-                                pk_col,
-                                _lookup_key(pk_value),
-                            )] = row_key
+                            primary_lookup[
+                                (
+                                    table.table_name,
+                                    pk_col,
+                                    _lookup_key(pk_value),
+                                )
+                            ] = row_key
 
                 for rel_idx, rel in enumerate(model.relationships):
                     if not rel.enabled:
@@ -164,8 +164,8 @@ class Neo4jOutputProvider(BaseOutputProvider):
         finally:
             driver.close()
 
-    def _build_driver(self, uri: str, user: str, password: str):
-        return GraphDatabase.driver(uri, auth=(user, password))
+    def _build_driver(self, uri: str, user: str, password: str, **driver_kwargs):
+        return GraphDatabase.driver(uri, auth=(user, password), **driver_kwargs)
 
 
 def _parse_neo4j_connection(
@@ -190,11 +190,7 @@ def _parse_neo4j_connection(
     password = parsed.password or settings.neo4j_password
 
     qs = parse_qs(parsed.query)
-    database = (
-        qs.get("database", [None])[0]
-        or parsed.path.lstrip("/")
-        or settings.neo4j_database
-    )
+    database = qs.get("database", [None])[0] or parsed.path.lstrip("/") or settings.neo4j_database
     return uri, user, password, database
 
 
@@ -256,4 +252,3 @@ def _coerce_value(value: Any) -> Any:
     if callable(iso):
         return iso()
     return str(value)
-

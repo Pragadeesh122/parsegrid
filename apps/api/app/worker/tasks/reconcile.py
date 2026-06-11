@@ -17,6 +17,7 @@ import logging
 from typing import Any
 
 from app.schemas.extraction_model import DatabaseModel
+from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
 from app.worker.db import get_job_field, publish_status, update_job
 
@@ -95,6 +96,6 @@ def reconcile_and_translate(
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: reconciliation failed")
-        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        update_job(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
+        update_job(job_id, status="FAILED", error_message=public_error_message(exc))
         raise

@@ -14,6 +14,7 @@ import logging
 
 from app.core.config import settings
 from app.schemas.extraction_model import DocumentProfile
+from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
 from app.worker.db import get_job_field, publish_status, update_job
 
@@ -103,6 +104,6 @@ def profile_and_propose(self, job_id: str):
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: profiling failed: {exc}")
-        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
-        update_job(job_id, status="FAILED", error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
+        update_job(job_id, status="FAILED", error_message=public_error_message(exc))
         raise

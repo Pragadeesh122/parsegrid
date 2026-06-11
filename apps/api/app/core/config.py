@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
 
+    # --- Connection-test guard ---
+    # Extra DSNs/URLs whose host:port may never be targeted by /connections/test,
+    # in addition to the automatically-derived internal endpoints.
+    connection_test_blocklist: list[str] = []
+
     # --- LlamaParse ---
     llama_cloud_api_key: str = ""
 

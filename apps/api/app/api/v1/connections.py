@@ -1,5 +1,7 @@
 """ParseGrid API — Connection management endpoints."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -9,6 +11,9 @@ from app.api.deps import get_current_user, get_db_session
 from app.core.security import TokenPayload
 from app.models.job import Job, JobStatus
 from app.schemas.job import JobResponse
+from app.services.safe_errors import blocked_reason, sanitize_connection_error
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Connections"])
 
@@ -46,6 +51,10 @@ async def test_connection(
 
     Uses the appropriate output provider to attempt a lightweight connection.
     """
+    reason = blocked_reason(body.connection_string)
+    if reason:
+        return {"success": False, "message": reason}
+
     from app.providers.factory import get_output_provider
 
     try:
@@ -57,7 +66,8 @@ async def test_connection(
         provider.test_connection(body.connection_string)
         return {"success": True, "message": "Connection successful"}
     except Exception as e:
-        return {"success": False, "message": f"Connection failed: {e}"}
+        logger.warning(f"connection test failed for user {user.sub}: {e}")
+        return {"success": False, "message": sanitize_connection_error(e)}
 
 
 @router.get(

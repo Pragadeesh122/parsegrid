@@ -40,7 +40,11 @@ class PostgresOutputProvider(BaseOutputProvider):
     """Provisions Phase 7 multi-table extracted data into PostgreSQL."""
 
     def test_connection(self, connection_string: str) -> bool:
-        engine = create_engine(connection_string, pool_pre_ping=True)
+        engine = create_engine(
+            connection_string,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": 5},
+        )
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -78,9 +82,7 @@ class PostgresOutputProvider(BaseOutputProvider):
                             f"DDL statement failed (continuing): {e}\n  SQL: {stripped[:200]}"
                         )
 
-                logger.info(
-                    f"Executed {len(ddl_statements)} DDL statements in {schema_name}"
-                )
+                logger.info(f"Executed {len(ddl_statements)} DDL statements in {schema_name}")
 
                 # 3. Insert rows in FK dependency order.
                 table_defs = {t.table_name: t for t in model.tables}
@@ -169,8 +171,7 @@ def _insert_table(
     col_list = ", ".join(f'"{c}"' for c in all_columns)
     placeholders = ", ".join(f":{c}" for c in all_columns)
     insert_sql = (
-        f'INSERT INTO "{schema_name}"."{table_def.table_name}" '
-        f"({col_list}) VALUES ({placeholders})"
+        f'INSERT INTO "{schema_name}"."{table_def.table_name}" ({col_list}) VALUES ({placeholders})'
     )
 
     inserted = 0
@@ -184,13 +185,10 @@ def _insert_table(
         except Exception as e:
             conn.execute(text("ROLLBACK TO SAVEPOINT row_sp"))
             logger.warning(
-                f"Insert failed for row in {schema_name}.{table_def.table_name} "
-                f"(skipping): {e}"
+                f"Insert failed for row in {schema_name}.{table_def.table_name} (skipping): {e}"
             )
 
-    logger.info(
-        f"Inserted {inserted}/{len(rows)} rows into {schema_name}.{table_def.table_name}"
-    )
+    logger.info(f"Inserted {inserted}/{len(rows)} rows into {schema_name}.{table_def.table_name}")
     return inserted
 
 
@@ -211,9 +209,7 @@ def _build_params(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
 
 
 def _generate_connection_string(schema_name: str) -> str:
-    parsed = urlparse(
-        settings.database_url.replace("+asyncpg", "").replace("+psycopg2", "")
-    )
+    parsed = urlparse(settings.database_url.replace("+asyncpg", "").replace("+psycopg2", ""))
     return (
         f"postgresql://{parsed.username}:{parsed.password}"
         f"@{parsed.hostname}:{parsed.port or 5432}"

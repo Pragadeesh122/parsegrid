@@ -107,7 +107,7 @@ def test_neo4j_provision_materializes_nodes_and_edges(monkeypatch):
     monkeypatch.setattr(
         provider,
         "_build_driver",
-        lambda uri, user, password: _FakeDriver(fake_session),
+        lambda uri, user, password, **kw: _FakeDriver(fake_session),
     )
 
     model = _sample_model()
@@ -144,7 +144,7 @@ def test_neo4j_test_connection_raises_on_failure(monkeypatch):
     monkeypatch.setattr(
         provider,
         "_build_driver",
-        lambda uri, user, password: _FakeDriver(fake_session),
+        lambda uri, user, password, **kw: _FakeDriver(fake_session),
     )
 
     with pytest.raises(RuntimeError):
@@ -157,7 +157,7 @@ def test_neo4j_delete_output_scoped(monkeypatch):
     monkeypatch.setattr(
         provider,
         "_build_driver",
-        lambda uri, user, password: _FakeDriver(fake_session),
+        lambda uri, user, password, **kw: _FakeDriver(fake_session),
     )
 
     provider.delete_output("job_789")
@@ -165,4 +165,3 @@ def test_neo4j_delete_output_scoped(monkeypatch):
     assert any("DETACH DELETE" in q for q, _ in fake_session.calls)
     delete_calls = [(q, p) for q, p in fake_session.calls if "DETACH DELETE" in q]
     assert delete_calls and delete_calls[0][1]["scope"] == "job_789"
-

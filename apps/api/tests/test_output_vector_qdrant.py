@@ -75,7 +75,7 @@ def test_qdrant_provision_creates_collection_and_points(monkeypatch):
     fake_client = _FakeQdrantClient()
     provider = QdrantOutputProvider()
 
-    monkeypatch.setattr(provider, "_build_client", lambda url, api_key: fake_client)
+    monkeypatch.setattr(provider, "_build_client", lambda url, api_key, **kw: fake_client)
     monkeypatch.setattr(
         "app.providers.output_vector_qdrant.get_embedding_provider",
         lambda: _FakeEmbedder(),
@@ -110,7 +110,7 @@ def test_qdrant_delete_output_scoped(monkeypatch):
     fake_client.collections.add("job_abc")
     provider = QdrantOutputProvider()
 
-    monkeypatch.setattr(provider, "_build_client", lambda url, api_key: fake_client)
+    monkeypatch.setattr(provider, "_build_client", lambda url, api_key, **kw: fake_client)
 
     provider.delete_output("job_abc")
 
@@ -122,8 +122,7 @@ def test_qdrant_test_connection_raises_on_failure(monkeypatch):
     fake_client.fail_connect = True
     provider = QdrantOutputProvider()
 
-    monkeypatch.setattr(provider, "_build_client", lambda url, api_key: fake_client)
+    monkeypatch.setattr(provider, "_build_client", lambda url, api_key, **kw: fake_client)
 
     with pytest.raises(RuntimeError):
         provider.test_connection("http://localhost:6333")
-
