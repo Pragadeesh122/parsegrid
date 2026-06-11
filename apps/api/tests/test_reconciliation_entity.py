@@ -71,9 +71,7 @@ def test_merges_two_rows_into_one_entity(monkeypatch):
 
 def test_llm_failure_returns_rows_unchanged(monkeypatch):
     rows = [{"name": "A"}, {"name": "B"}]
-    monkeypatch.setattr(
-        "openai.OpenAI", _fake_openai(raise_exc=RuntimeError("api down"))
-    )
+    monkeypatch.setattr("openai.OpenAI", _fake_openai(raise_exc=RuntimeError("api down")))
     out, notes = entity_resolution(rows, PEOPLE, ["name"])
     assert out == rows
     assert any("LLM call failed" in n for n in notes)
