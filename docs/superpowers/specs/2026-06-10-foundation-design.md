@@ -1,7 +1,7 @@
 # Foundation: Testing, Security Hardening, and CI
 
 **Date:** 2026-06-10
-**Status:** Approved
+**Status:** Implemented
 **Sub-project:** 0 of 4 (OS-release roadmap: Foundation → Dataset Consolidation → Export → NL Query)
 
 ## Context
