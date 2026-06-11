@@ -41,8 +41,16 @@ def verify_jwt(
             token,
             settings.auth_secret,
             algorithms=[settings.jwt_algorithm],
-            options={"verify_aud": False},  # Auth.js may not set audience
+            options={
+                "verify_aud": False,  # Auth.js may not set audience
+                "require": ["exp", "sub"],
+            },
         )
+        if not payload.get("sub"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: empty sub claim",
+            )
         return TokenPayload(payload)
     except jwt.ExpiredSignatureError:
         raise HTTPException(
