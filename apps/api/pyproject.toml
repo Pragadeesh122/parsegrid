@@ -59,6 +59,9 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: requires a reachable Postgres (TEST_DATABASE_URL)",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
