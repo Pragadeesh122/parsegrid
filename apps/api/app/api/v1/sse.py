@@ -16,7 +16,6 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -24,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import settings
-from app.core.security import TokenPayload
+from app.core.security import TokenPayload, decode_token
 from app.models.job import Job, JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["SSE"])
@@ -43,26 +42,14 @@ async def verify_sse_cookie(request: Request) -> TokenPayload:
     This is used ONLY for the SSE endpoint because the browser EventSource
     API cannot send Authorization headers.
     """
-    token = (
-        request.cookies.get("authjs.session-token")
-        or request.cookies.get("__Secure-authjs.session-token")
+    token = request.cookies.get("authjs.session-token") or request.cookies.get(
+        "__Secure-authjs.session-token"
     )
 
     if not token:
         raise HTTPException(status_code=401, detail="Missing session cookie")
 
-    try:
-        payload = jwt.decode(
-            token,
-            settings.auth_secret,
-            algorithms=[settings.jwt_algorithm],
-            options={"verify_aud": False},
-        )
-        return TokenPayload(payload)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    return decode_token(token)
 
 
 # --- SSE event generator ---

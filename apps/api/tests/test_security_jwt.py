@@ -5,6 +5,7 @@ import jwt as pyjwt
 import pytest
 from fastapi import HTTPException
 
+from app.api.v1.sse import verify_sse_cookie
 from app.core.config import settings
 from app.core.security import verify_jwt
 
@@ -54,4 +55,26 @@ def test_token_without_sub_rejected():
 def test_token_with_empty_sub_rejected():
     with pytest.raises(HTTPException) as exc:
         verify_jwt(_creds(_token({"sub": "", "exp": int(time.time()) + 300})))
+    assert exc.value.status_code == 401
+
+
+def _sse_request(token: str | None):
+    cookies = {} if token is None else {"authjs.session-token": token}
+    return SimpleNamespace(cookies=cookies)
+
+
+async def test_sse_cookie_valid_token_returns_payload():
+    payload = await verify_sse_cookie(_sse_request(_token(_valid_claims())))
+    assert payload.sub == "user-1"
+
+
+async def test_sse_cookie_token_without_exp_rejected():
+    with pytest.raises(HTTPException) as exc:
+        await verify_sse_cookie(_sse_request(_token({"sub": "user-1"})))
+    assert exc.value.status_code == 401
+
+
+async def test_sse_cookie_empty_sub_rejected():
+    with pytest.raises(HTTPException) as exc:
+        await verify_sse_cookie(_sse_request(_token({"sub": "", "exp": int(time.time()) + 300})))
     assert exc.value.status_code == 401

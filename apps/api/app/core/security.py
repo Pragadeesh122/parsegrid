@@ -27,15 +27,12 @@ class TokenPayload:
         self.raw: dict = payload
 
 
-def verify_jwt(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-) -> TokenPayload:
-    """FastAPI dependency that extracts and verifies the JWT from the
-    Authorization: Bearer header.
+def decode_token(token: str) -> TokenPayload:
+    """Decode and validate an Auth.js JWT. Raises HTTPException 401 on any failure.
 
-    Raises 401 if the token is invalid, expired, or missing.
+    Used by both the Authorization-header path (verify_jwt) and the
+    SSE cookie path (verify_sse_cookie).
     """
-    token = credentials.credentials
     try:
         payload = jwt.decode(
             token,
@@ -46,12 +43,6 @@ def verify_jwt(
                 "require": ["exp", "sub"],
             },
         )
-        if not payload.get("sub"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: empty sub claim",
-            )
-        return TokenPayload(payload)
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,3 +53,21 @@ def verify_jwt(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {e}",
         )
+    sub = payload.get("sub")
+    if not isinstance(sub, str) or not sub.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: empty sub claim",
+        )
+    return TokenPayload(payload)
+
+
+def verify_jwt(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+) -> TokenPayload:
+    """FastAPI dependency that extracts and verifies the JWT from the
+    Authorization: Bearer header.
+
+    Raises 401 if the token is invalid, expired, or missing.
+    """
+    return decode_token(credentials.credentials)
