@@ -35,18 +35,23 @@ def generate_presigned_upload_url(
     object_key: str,
     content_type: str = "application/octet-stream",
     expires_in: int = 3600,
+    content_length: int | None = None,
 ) -> str:
     """Generate a presigned URL for direct client-to-S3 upload.
-    Avoids streaming large files through FastAPI.
+    Avoids streaming large files through FastAPI. When `content_length`
+    is given it becomes part of the signature, capping the upload size.
     """
     client = get_s3_client()
+    params = {
+        "Bucket": settings.s3_bucket,
+        "Key": object_key,
+        "ContentType": content_type,
+    }
+    if content_length is not None:
+        params["ContentLength"] = content_length
     return client.generate_presigned_url(
         "put_object",
-        Params={
-            "Bucket": settings.s3_bucket,
-            "Key": object_key,
-            "ContentType": content_type,
-        },
+        Params=params,
         ExpiresIn=expires_in,
     )
 
@@ -129,8 +134,7 @@ def delete_objects_from_s3(object_keys: list[str]) -> int:
         errors = response.get("Errors", [])
         if errors:
             details = ", ".join(
-                f"{error.get('Key', '?')}: {error.get('Code', 'Unknown')}"
-                for error in errors
+                f"{error.get('Key', '?')}: {error.get('Code', 'Unknown')}" for error in errors
             )
             raise RuntimeError(f"Failed to delete S3 objects: {details}")
 

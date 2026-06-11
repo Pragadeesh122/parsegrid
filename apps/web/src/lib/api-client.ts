@@ -209,9 +209,14 @@ export interface DataPreviewResponse {
 
 export const api = {
   // Upload
-  getPresignedUrl: (filename: string, token: string) =>
+  getPresignedUrl: (
+    filename: string,
+    fileSize: number,
+    contentType: string,
+    token: string,
+  ) =>
     request<UploadUrlResponse>(
-      `/api/v1/upload/presigned-url?filename=${encodeURIComponent(filename)}`,
+      `/api/v1/upload/presigned-url?filename=${encodeURIComponent(filename)}&file_size=${fileSize}&content_type=${encodeURIComponent(contentType)}`,
       { method: "POST", token },
     ),
 

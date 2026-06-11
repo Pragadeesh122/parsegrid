@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     # --- LlamaParse ---
     llama_cloud_api_key: str = ""
 
+    # --- Upload constraints ---
+    max_upload_bytes: int = 100 * 1024 * 1024  # 100 MB
+    allowed_upload_content_types: list[str] = [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/tiff",
+        "image/webp",
+    ]
+
     # --- CORS ---
     cors_origins: list[str] = ["http://localhost:3000"]
 
