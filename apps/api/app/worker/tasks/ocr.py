@@ -12,6 +12,7 @@ import os
 import tempfile
 
 from app.core.config import settings
+from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
 from app.worker.db import get_job_field, publish_status, update_job
 
@@ -131,16 +132,14 @@ def process_document(self, job_id: str):
                 from app.worker.tasks.profile import profile_and_propose
 
                 profile_and_propose.apply_async(args=[job_id])
-                logger.info(
-                    f"Job {job_id}: OCR complete, dispatched profile_and_propose (FULL)"
-                )
+                logger.info(f"Job {job_id}: OCR complete, dispatched profile_and_propose (FULL)")
 
     except Exception as exc:
         logger.exception(f"Job {job_id}: OCR failed: {exc}")
-        publish_status(job_id, "FAILED", 0.0, error_message=str(exc))
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
         update_job(
             job_id,
             status="FAILED",
-            error_message=str(exc),
+            error_message=public_error_message(exc),
         )
         raise self.retry(exc=exc, countdown=60)
