@@ -34,12 +34,15 @@ DIVERSITY_PAGE_COUNT = 3
 
 def profile_document(
     ocr_json: dict[str, Any],
+    budget: int | None = None,
 ) -> tuple[list[int], dict[str, int]]:
     """Pick representative pages and build a region-type histogram.
 
     Args:
         ocr_json: Parsed contents of `parsed/{job_id}/ocr_result.json` —
             shape `{page_count: int, pages: [{page_number, regions: [...]}]}`.
+        budget: optional override of MAX_SAMPLED_PAGES (used for
+            multi-document budget splitting).
 
     Returns:
         (sampled_page_numbers, region_type_histogram)
@@ -48,6 +51,8 @@ def profile_document(
     total_pages = ocr_json.get("page_count") or len(pages)
     if total_pages == 0:
         return [], {}
+
+    cap = budget if budget is not None else MAX_SAMPLED_PAGES
 
     # Build the global region-type histogram and a per-page diversity score.
     histogram: Counter[str] = Counter()
@@ -76,7 +81,7 @@ def profile_document(
     #    page number ascending so the result is deterministic.
     diversity_sorted = sorted(diversity_scores, key=lambda t: (-t[1], t[0]))
     for page_number, _ in diversity_sorted:
-        if len(selected) >= MAX_SAMPLED_PAGES:
+        if len(selected) >= cap:
             break
         if (
             len([p for p in selected if p not in range(1, 4) and p < total_pages - 1])
@@ -86,20 +91,24 @@ def profile_document(
         selected.add(page_number)
 
     # 4. Evenly-spaced fillers through the middle.
-    if len(selected) < MAX_SAMPLED_PAGES and total_pages > MAX_SAMPLED_PAGES:
-        remaining_slots = MAX_SAMPLED_PAGES - len(selected)
+    if len(selected) < cap and total_pages > cap:
+        remaining_slots = cap - len(selected)
         # Use a stride that walks the middle of the doc.
         stride = max(1, total_pages // (remaining_slots + 1))
         for offset in range(stride, total_pages, stride):
-            if len(selected) >= MAX_SAMPLED_PAGES:
+            if len(selected) >= cap:
                 break
             selected.add(offset)
 
     # If the doc is short, just take everything.
-    if total_pages <= MAX_SAMPLED_PAGES:
+    if total_pages <= cap:
         selected = set(range(1, total_pages + 1))
 
     sampled = sorted(p for p in selected if 1 <= p <= total_pages)
+    if len(sampled) > cap:
+        # Keep the earliest pages first — deterministic and preserves the
+        # front-matter anchors that matter most for model discovery.
+        sampled = sampled[:cap]
     return sampled, dict(histogram)
 
 

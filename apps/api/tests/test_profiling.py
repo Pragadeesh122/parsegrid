@@ -56,3 +56,22 @@ def test_build_profile_context_format():
 def test_build_profile_context_skips_unknown_pages():
     doc = _doc([_page(1, ["text"])])
     assert build_profile_context([1, 99], doc) == build_profile_context([1], doc)
+
+
+def test_budget_overrides_default_cap():
+    doc = _doc([_page(n, ["text"]) for n in range(1, 51)])
+    sampled, _ = profile_document(doc, budget=6)
+    assert len(sampled) == 6
+    assert sampled == sorted(sampled)
+    assert 1 in sampled  # front anchor survives trimming
+
+
+def test_budget_short_doc_still_takes_everything_under_budget():
+    doc = _doc([_page(n, ["text"]) for n in range(1, 5)])
+    sampled, _ = profile_document(doc, budget=6)
+    assert sampled == [1, 2, 3, 4]
+
+
+def test_default_budget_unchanged():
+    doc = _doc([_page(n, ["text"]) for n in range(1, 51)])
+    assert profile_document(doc) == profile_document(doc, budget=MAX_SAMPLED_PAGES)
