@@ -90,7 +90,7 @@ def _chunk_text_by_tokens(
     max_retries=3,
     queue="ocr",
 )
-def index_document(self, job_id: str):
+def index_document(self, job_id: str, document_id: str):
     """Index a document into pgvector for targeted RAG extraction.
 
     1. Load full_text.txt from S3
@@ -107,7 +107,7 @@ def index_document(self, job_id: str):
         from app.core.storage import get_s3_client
 
         s3 = get_s3_client()
-        parsed_key = f"parsed/{job_id}/full_text.txt"
+        parsed_key = f"parsed/{job_id}/{document_id}/full_text.txt"
         response = s3.get_object(Bucket=settings.s3_bucket, Key=parsed_key)
         full_text = response["Body"].read().decode("utf-8")
 

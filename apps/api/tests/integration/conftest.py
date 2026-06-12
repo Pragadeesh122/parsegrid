@@ -68,11 +68,9 @@ async def client(database_available, monkeypatch):
     app.dependency_overrides[get_db] = _override_get_db
 
     # No real Celery, no real S3.
-    from app.worker.tasks import ocr as ocr_tasks
-
-    monkeypatch.setattr(ocr_tasks.process_document, "apply_async", lambda *a, **k: None)
     from app.api.v1 import jobs as jobs_module
 
+    monkeypatch.setattr(jobs_module, "_dispatch_ocr", lambda job: None)
     monkeypatch.setattr(jobs_module, "delete_object_from_s3", lambda *a, **k: None)
     monkeypatch.setattr(jobs_module, "delete_prefix_from_s3", lambda *a, **k: 0)
 

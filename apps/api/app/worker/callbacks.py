@@ -18,12 +18,21 @@ logger = logging.getLogger(__name__)
 # merge_results is a chord callback: (chunk_results, job_id, schema) → index 1.
 _JOB_ID_ARG_INDEX: dict[str, int] = {
     "app.worker.tasks.ocr.process_document": 0,
+    "app.worker.tasks.ocr.ocr_complete": 1,
     "app.worker.tasks.extract.run_extraction": 0,
-    "app.worker.tasks.extract.extract_chunk": 0,
+    "app.worker.tasks.extract.extract_table_chunk": 0,
     "app.worker.tasks.merge.merge_results": 1,
-    "app.worker.tasks.reconcile.reconcile_and_translate": 0,
+    "app.worker.tasks.reconcile.rebuild_dataset": 0,
     "app.worker.tasks.translate.translate_and_provision": 0,
     "app.worker.tasks.rag.index_document": 0,
+}
+
+# Tasks that carry a document_id positional arg (worker-crash safety: the
+# in-flight document must not strand in OCR_PROCESSING/EXTRACTING).
+_DOCUMENT_ID_ARG_INDEX: dict[str, int] = {
+    "app.worker.tasks.ocr.process_document": 1,
+    "app.worker.tasks.extract.extract_table_chunk": 1,
+    "app.worker.tasks.rag.index_document": 1,
 }
 
 
@@ -64,3 +73,17 @@ def on_task_failure(sender, task_id, exception, args, kwargs, traceback, einfo, 
         publish_status(job_id, "FAILED", 0.0, error_message=error_msg)
     except Exception:
         logger.exception(f"Job {job_id}: failed to update status in failure callback")
+
+    task_name = getattr(sender, "name", str(sender))
+    doc_idx = _DOCUMENT_ID_ARG_INDEX.get(task_name)
+    document_id = None
+    if doc_idx is not None and args and len(args) > doc_idx:
+        document_id = str(args[doc_idx])
+    document_id = document_id or kwargs.get("document_id")
+    if document_id:
+        try:
+            from app.worker.db import update_document
+
+            update_document(document_id, status="FAILED", error_message=error_msg)
+        except Exception:
+            logger.exception(f"Document {document_id}: failed to update status in failure callback")

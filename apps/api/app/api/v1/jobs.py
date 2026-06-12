@@ -24,6 +24,16 @@ from app.schemas.job import (
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
+
+def _dispatch_ocr(job: Job) -> None:
+    """Fan OCR out across the job's documents; the chord callback advances the job."""
+    from celery import chord, group
+
+    from app.worker.tasks.ocr import ocr_complete, process_document
+
+    chord(group(process_document.s(job.id, d.id) for d in job.documents))(ocr_complete.s(job.id))
+
+
 DELETABLE_JOB_STATUSES = {
     JobStatus.MODEL_PROPOSED,
     JobStatus.AWAITING_REVIEW,
@@ -83,10 +93,8 @@ async def create_job(
     await db.commit()
     await db.refresh(job)
 
-    # Enqueue OCR processing task via Celery
-    from app.worker.tasks.ocr import process_document
-
-    process_document.apply_async(args=[job.id])
+    # Enqueue OCR processing for each document via Celery
+    _dispatch_ocr(job)
 
     return job
 
@@ -293,9 +301,7 @@ async def reject_model(
     await db.commit()
     await db.refresh(job)
 
-    from app.worker.tasks.ocr import process_document
-
-    process_document.apply_async(args=[job.id])
+    _dispatch_ocr(job)
 
     return job
 
