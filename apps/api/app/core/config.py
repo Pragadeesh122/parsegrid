@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # in addition to the automatically-derived internal endpoints.
     connection_test_blocklist: list[str] = []
 
+    # --- Dataset consolidation ---
+    # Share of appended-document rows allowed to miss primary-key components
+    # before the append pauses for human review.
+    append_max_pk_null_ratio: float = 0.5
+
     # --- LlamaParse ---
     llama_cloud_api_key: str = ""
 
