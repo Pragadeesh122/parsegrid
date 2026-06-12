@@ -150,12 +150,45 @@ export interface DocumentProfile {
   rationale: string;
 }
 
-export interface Job {
+export type DocumentStatus =
+  | "PENDING"
+  | "OCR_PROCESSING"
+  | "OCR_DONE"
+  | "EXTRACTING"
+  | "EXTRACTED"
+  | "FAILED"
+  | "REJECTED";
+
+export interface CompatReport {
+  total_rows: number;
+  rows_per_table: Record<string, number>;
+  pk_null_rows: number;
+  pk_null_ratio: number;
+  pk_tables: string[];
+  empty_pk_tables: string[];
+  profile_drift: Record<string, Record<string, number>> | null;
+  reasons: string[];
+  needs_review: boolean;
+  resolved?: "force" | "cancel";
+}
+
+export interface JobDocument {
   id: string;
-  user_id: string;
+  job_id: string;
   filename: string;
   file_key: string;
   file_size: number;
+  page_count: number | null;
+  status: DocumentStatus;
+  compat_report: CompatReport | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  user_id: string;
   status: string;
   job_type: JobType;
   output_format: string;
@@ -166,10 +199,13 @@ export interface Job {
   section_map: SectionCandidate[] | null;
   connection_string: string | null;
   error_message: string | null;
-  page_count: number | null;
   provisioned_rows: number | null;
   provisioned_at: string | null;
   target_ddl: string | null;
+  documents: JobDocument[];
+  document_count: number;
+  total_pages: number | null;
+  total_file_size: number;
   created_at: string;
   updated_at: string;
 }
@@ -223,9 +259,7 @@ export const api = {
   // Jobs
   createJob: (
     data: {
-      filename: string;
-      file_key: string;
-      file_size: number;
+      files: { filename: string; file_key: string; file_size: number }[];
       output_format?: string;
       job_type?: JobType;
     },
@@ -249,6 +283,41 @@ export const api = {
   deleteJob: (id: string, token: string) =>
     request<void>(`/api/v1/jobs/${id}`, {
       method: "DELETE",
+      token,
+    }),
+
+  appendDocument: (
+    jobId: string,
+    data: { filename: string; file_key: string; file_size: number },
+    token: string,
+  ) =>
+    request<JobDocument>(`/api/v1/jobs/${jobId}/documents`, {
+      method: "POST",
+      body: data,
+      token,
+    }),
+
+  resolveAppend: (
+    jobId: string,
+    documentId: string,
+    action: "force" | "cancel",
+    token: string,
+  ) =>
+    request<JobDocument>(`/api/v1/jobs/${jobId}/documents/${documentId}/resolve`, {
+      method: "POST",
+      body: { action },
+      token,
+    }),
+
+  deleteDocument: (jobId: string, documentId: string, token: string) =>
+    request<void>(`/api/v1/jobs/${jobId}/documents/${documentId}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  rebuildJob: (jobId: string, token: string) =>
+    request<Job>(`/api/v1/jobs/${jobId}/rebuild`, {
+      method: "POST",
       token,
     }),
 

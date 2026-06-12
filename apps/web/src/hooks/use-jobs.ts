@@ -15,6 +15,7 @@ const IDLE_STATUSES = new Set([
   "MODEL_PROPOSED",
   "AWAITING_REVIEW",
   "AWAITING_QUERY",
+  "AWAITING_APPEND_REVIEW",
 ]);
 
 // --- Queries ---
@@ -57,10 +58,9 @@ export function useCreateJob(token: string) {
 
   return useMutation({
     mutationFn: (data: {
-      filename: string;
-      file_key: string;
-      file_size: number;
+      files: {filename: string; file_key: string; file_size: number}[];
       output_format?: string;
+      job_type?: "FULL" | "TARGETED";
     }) => api.createJob(data, token),
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["jobs"]});
@@ -118,6 +118,54 @@ export function useTargetQuery(token: string) {
       api.targetQuery(jobId, query, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({queryKey: ["job", data.id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}
+
+export function useAppendDocument(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      jobId,
+      file,
+    }: {
+      jobId: string;
+      file: {filename: string; file_key: string; file_size: number};
+    }) => api.appendDocument(jobId, file, token),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({queryKey: ["job", data.job_id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}
+
+export function useResolveAppend(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      jobId,
+      documentId,
+      action,
+    }: {
+      jobId: string;
+      documentId: string;
+      action: "force" | "cancel";
+    }) => api.resolveAppend(jobId, documentId, action, token),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({queryKey: ["job", data.job_id]});
+      queryClient.invalidateQueries({queryKey: ["jobs"]});
+    },
+  });
+}
+
+export function useDeleteDocument(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({jobId, documentId}: {jobId: string; documentId: string}) =>
+      api.deleteDocument(jobId, documentId, token),
+    onSuccess: (_, {jobId}) => {
+      queryClient.invalidateQueries({queryKey: ["job", jobId]});
       queryClient.invalidateQueries({queryKey: ["jobs"]});
     },
   });
