@@ -18,35 +18,41 @@ interface NewJobClientProps {
 
 export function NewJobClient({token}: NewJobClientProps) {
   const router = useRouter();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [outputFormat, setOutputFormat] = useState("SQL");
   const [jobType, setJobType] = useState<"FULL" | "TARGETED">("FULL");
   const [error, setError] = useState<string | null>(null);
 
-  const handleFileSelected = (file: File) => {
-    setSelectedFile(file);
+  const handleFilesSelected = (files: File[]) => {
+    setSelectedFiles((prev) =>
+      jobType === "TARGETED" ? files.slice(0, 1) : [...prev, ...files]
+    );
     setError(null);
   };
 
-  const handleSubmit = async () => {
-    if (!selectedFile || !token) return;
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
+  const handleSubmit = async () => {
+    if (!selectedFiles.length || !token) return;
     setIsUploading(true);
     setError(null);
-
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const uploadRes = await fetch(`${API_BASE}/api/v1/upload/direct`, {
-        method: "POST",
-        headers: {Authorization: `Bearer ${token}`},
-        body: formData,
-      });
-
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const {file_key} = await uploadRes.json();
+      const files: {filename: string; file_key: string; file_size: number}[] = [];
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await fetch(`${API_BASE}/api/v1/upload/direct`, {
+          method: "POST",
+          headers: {Authorization: `Bearer ${token}`},
+          body: formData,
+        });
+        if (!uploadRes.ok) throw new Error(`Upload failed: ${file.name}`);
+        const {file_key} = await uploadRes.json();
+        files.push({filename: file.name, file_key, file_size: file.size});
+      }
 
       const jobRes = await fetch(`${API_BASE}/api/v1/jobs`, {
         method: "POST",
@@ -55,17 +61,13 @@ export function NewJobClient({token}: NewJobClientProps) {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          filename: selectedFile.name,
-          file_key,
-          file_size: selectedFile.size,
+          files,
           output_format: outputFormat,
           job_type: jobType,
         }),
       });
-
       if (!jobRes.ok) throw new Error("Job creation failed");
       const job = await jobRes.json();
-
       router.push(`/jobs/${job.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -109,12 +111,15 @@ export function NewJobClient({token}: NewJobClientProps) {
           </div>
 
           <Dropzone
-            onFileSelected={handleFileSelected}
+            onFilesSelected={handleFilesSelected}
             isUploading={isUploading}
+            multiple={jobType === "FULL"}
           />
 
-          {selectedFile && (
-            <div className='flex items-center justify-between rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-4'>
+          {selectedFiles.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className='flex items-center justify-between rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-4'>
               <div className='flex items-center gap-3'>
                 <div className='flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10'>
                   <svg
@@ -132,15 +137,15 @@ export function NewJobClient({token}: NewJobClientProps) {
                 </div>
                 <div>
                   <p className='text-sm font-medium text-zinc-200'>
-                    {selectedFile.name}
+                    {file.name}
                   </p>
                   <p className='text-xs font-mono text-zinc-500'>
-                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                    {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setSelectedFile(null)}
+                onClick={() => removeFile(index)}
                 className='rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300'>
                 <svg
                   className='h-4 w-4'
@@ -156,7 +161,7 @@ export function NewJobClient({token}: NewJobClientProps) {
                 </svg>
               </button>
             </div>
-          )}
+          ))}
 
           {/* Extraction Mode */}
           <div className='space-y-3'>
@@ -180,7 +185,10 @@ export function NewJobClient({token}: NewJobClientProps) {
                 </p>
               </button>
               <button
-                onClick={() => setJobType("TARGETED")}
+                onClick={() => {
+                  setJobType("TARGETED");
+                  setSelectedFiles((prev) => prev.slice(0, 1));
+                }}
                 className={`rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
                   jobType === "TARGETED"
                     ? "border-emerald-600 bg-emerald-600/10"
@@ -199,6 +207,11 @@ export function NewJobClient({token}: NewJobClientProps) {
                 </p>
               </button>
             </div>
+            {jobType === "TARGETED" && (
+              <p className='text-xs text-zinc-600'>
+                Targeted mode processes a single document.
+              </p>
+            )}
           </div>
 
           {/* Output Format */}
@@ -228,7 +241,7 @@ export function NewJobClient({token}: NewJobClientProps) {
 
           <button
             onClick={handleSubmit}
-            disabled={!selectedFile || isUploading || !token}
+            disabled={!selectedFiles.length || isUploading || !token}
             className='w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50'>
             {isUploading ? "Processing..." : "Start Extraction"}
           </button>

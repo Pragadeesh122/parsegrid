@@ -8,50 +8,50 @@
 import { useCallback, useState, type DragEvent } from "react";
 
 interface DropzoneProps {
-  onFileSelected: (file: File) => void;
+  onFilesSelected: (files: File[]) => void;
   isUploading?: boolean;
   accept?: string;
   maxSizeMB?: number;
+  multiple?: boolean;
 }
 
 export function Dropzone({
-  onFileSelected,
+  onFilesSelected,
   isUploading = false,
   accept = ".pdf,.png,.jpg,.jpeg,.tiff,.bmp",
   maxSizeMB = 100,
+  multiple = false,
 }: DropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const validateAndSelect = useCallback(
-    (file: File) => {
+    (files: File[]) => {
       setError(null);
-
-      if (file.size > maxSizeMB * 1024 * 1024) {
-        setError(`File too large. Maximum size: ${maxSizeMB}MB`);
-        return;
+      const allowedExts = accept.split(",").map((s) => s.trim().replace(".", ""));
+      const valid: File[] = [];
+      for (const file of files) {
+        if (file.size > maxSizeMB * 1024 * 1024) {
+          setError(`${file.name}: too large. Maximum size: ${maxSizeMB}MB`);
+          continue;
+        }
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        if (ext && !allowedExts.includes(ext)) {
+          setError(`${file.name}: unsupported format. Allowed: ${accept}`);
+          continue;
+        }
+        valid.push(file);
       }
-
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      const allowedExts = accept
-        .split(",")
-        .map((s) => s.trim().replace(".", ""));
-      if (ext && !allowedExts.includes(ext)) {
-        setError(`Unsupported format. Allowed: ${accept}`);
-        return;
-      }
-
-      onFileSelected(file);
+      if (valid.length) onFilesSelected(multiple ? valid : valid.slice(0, 1));
     },
-    [onFileSelected, maxSizeMB, accept],
+    [onFilesSelected, maxSizeMB, accept, multiple],
   );
 
   const handleDrop = useCallback(
     (e: DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) validateAndSelect(file);
+      validateAndSelect(Array.from(e.dataTransfer.files));
     },
     [validateAndSelect],
   );
@@ -80,9 +80,12 @@ export function Dropzone({
           const input = document.createElement("input");
           input.type = "file";
           input.accept = accept;
+          input.multiple = multiple;
           input.onchange = (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) validateAndSelect(file);
+            const files = Array.from(
+              (e.target as HTMLInputElement).files ?? [],
+            );
+            if (files.length) validateAndSelect(files);
           };
           input.click();
         }
@@ -109,7 +112,13 @@ export function Dropzone({
       </div>
 
       <p className="text-sm font-medium text-zinc-300">
-        {isDragging ? "Drop your document here" : "Drag & drop your document"}
+        {isDragging
+          ? multiple
+            ? "Drop your documents here"
+            : "Drop your document here"
+          : multiple
+            ? "Drag & drop your documents"
+            : "Drag & drop your document"}
       </p>
       <p className="mt-1 text-xs text-zinc-500">
         or click to browse &middot; PDF, PNG, JPG, TIFF
