@@ -97,6 +97,15 @@ async def resolve_append(
     if not (document.compat_report or {}).get("needs_review"):
         raise HTTPException(status_code=400, detail="This document is not awaiting review")
 
+    # Stamp the resolution so a later append's review cannot be hijacked by
+    # this document's stale needs_review flag (JSON column: reassign, don't
+    # mutate in place, or SQLAlchemy won't detect the change).
+    document.compat_report = {
+        **document.compat_report,
+        "needs_review": False,
+        "resolved": body.action,
+    }
+
     if body.action == "cancel":
         document.status = DocumentStatus.REJECTED
         job.status = JobStatus.COMPLETED

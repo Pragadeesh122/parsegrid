@@ -112,8 +112,54 @@ async def test_cannot_delete_last_contributing_document(client, no_celery, db_ex
     assert res.status_code == 400
 
 
-async def test_rebuild_requires_extracted_documents(client, no_celery, db_exec):
+async def test_rebuild_requires_locked_model(client, no_celery, db_exec):
     job = await _complete_job(client, db_exec)
     res = await client.post(f"/api/v1/jobs/{job['id']}/rebuild", headers=auth_header("user-a"))
     # locked_model is null on this seeded job → 400
+    assert res.status_code == 400
+
+
+async def test_rebuild_requires_extracted_documents(client, no_celery, db_exec):
+    job = await _complete_job(client, db_exec)
+    await db_exec(
+        'UPDATE jobs SET locked_model = \'{"extraction_type": "single_table", '
+        '"tables": [], "relationships": []}\' WHERE id = :id',
+        {"id": job["id"]},
+    )
+    await db_exec("UPDATE documents SET status = 'FAILED' WHERE job_id = :id", {"id": job["id"]})
+    res = await client.post(f"/api/v1/jobs/{job['id']}/rebuild", headers=auth_header("user-a"))
+    assert res.status_code == 400
+
+
+async def test_resolve_stamps_resolution_into_compat_report(client, no_celery, db_exec):
+    job = await _complete_job(client, db_exec)
+    doc_id = job["documents"][0]["id"]
+    await db_exec(
+        "UPDATE jobs SET status = 'AWAITING_APPEND_REVIEW' WHERE id = :id", {"id": job["id"]}
+    )
+    await db_exec(
+        'UPDATE documents SET compat_report = \'{"needs_review": true, "reasons": []}\' '
+        "WHERE id = :id",
+        {"id": doc_id},
+    )
+    res = await client.post(
+        f"/api/v1/jobs/{job['id']}/documents/{doc_id}/resolve",
+        json={"action": "cancel"},
+        headers=auth_header("user-a"),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "REJECTED"
+    assert body["compat_report"]["needs_review"] is False
+    assert body["compat_report"]["resolved"] == "cancel"
+
+    # A second resolve on the same (now stale) document must be rejected.
+    await db_exec(
+        "UPDATE jobs SET status = 'AWAITING_APPEND_REVIEW' WHERE id = :id", {"id": job["id"]}
+    )
+    res = await client.post(
+        f"/api/v1/jobs/{job['id']}/documents/{doc_id}/resolve",
+        json={"action": "cancel"},
+        headers=auth_header("user-a"),
+    )
     assert res.status_code == 400
