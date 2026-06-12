@@ -70,7 +70,9 @@ def profile_and_propose(self, job_id: str):
         merged_histogram: dict[str, int] = {}
         context_blocks: list[str] = []
         filenames = {d["id"]: d["filename"] for d in documents}
-        for doc_id in sorted(ocr_by_doc):
+        # Upload order (documents is ORDER BY created_at) — the user's first
+        # file leads the LLM context.
+        for doc_id in (d["id"] for d in documents):
             sampled, histogram = profile_document(ocr_by_doc[doc_id], budget=budgets.get(doc_id))
             sampled_by_doc[doc_id] = sampled
             for rtype, count in histogram.items():
