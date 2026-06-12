@@ -1,6 +1,7 @@
 """ParseGrid API — Pydantic schemas for Job endpoints."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -80,6 +81,16 @@ class DocumentResponse(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentCreateRequest(JobFileSpec):
+    """Request body for appending a file to a completed dataset."""
+
+
+class ResolveAppendRequest(BaseModel):
+    """Force/cancel decision for an append that paused at the compat gate."""
+
+    action: Literal["force", "cancel"]
 
 
 # --- Response Schemas ---

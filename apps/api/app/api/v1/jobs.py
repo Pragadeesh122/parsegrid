@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session
 from app.core.security import TokenPayload
 from app.core.storage import delete_object_from_s3, delete_prefix_from_s3
-from app.models.job import Document, Job, JobStatus, JobType
+from app.models.job import Document, DocumentStatus, Job, JobStatus, JobType
 from app.providers.factory import get_output_provider
 from app.schemas.job import (
     DataPreviewResponse,
@@ -302,6 +302,44 @@ async def reject_model(
     await db.refresh(job)
 
     _dispatch_ocr(job)
+
+    return job
+
+
+@router.post(
+    "/{job_id}/rebuild",
+    response_model=JobResponse,
+    summary="Re-run reconcile → translate → provision from stored buckets",
+)
+async def rebuild_job(
+    job_id: str,
+    user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Job:
+    """Recovery path: rebuild the output database from document buckets."""
+    query = select(Job).where(Job.id == job_id, Job.user_id == user.sub)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job must be COMPLETED or FAILED to rebuild (currently {job.status})",
+        )
+    if not job.locked_model:
+        raise HTTPException(status_code=400, detail="Job has no locked model")
+    if not any(d.status == DocumentStatus.EXTRACTED for d in job.documents):
+        raise HTTPException(status_code=400, detail="No extracted documents to rebuild from")
+
+    job.status = JobStatus.RECONCILING
+    job.progress = 0.0
+    await db.commit()
+    await db.refresh(job)
+
+    from app.worker.tasks.reconcile import rebuild_dataset
+
+    rebuild_dataset.apply_async(args=[job.id])
 
     return job
 
