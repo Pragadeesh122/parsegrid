@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.consolidation import (
     allocate_sampling_budget,
     build_compat_report,
@@ -126,3 +128,60 @@ class TestBuildCompatReport:
         )
         assert report["needs_review"] is False  # drift alone never blocks
         assert report["profile_drift"] is not None
+
+
+class _BoomOpenAI:
+    """Constructing the client fails → entity_resolution's documented fallback."""
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("no network in tests")
+
+
+class TestUnionThroughReconciliation:
+    @pytest.fixture(autouse=True)
+    def _no_openai(self, monkeypatch):
+        monkeypatch.setattr("openai.OpenAI", _BoomOpenAI)
+
+    def test_same_entity_across_documents_dedupes_to_one_row(self):
+        from app.services.reconciliation import reconcile_model
+
+        doc_a = {
+            "tables": {
+                "invoices": {
+                    "rows": [{"invoice_number": "INV-1", "note": None, "__chunk_index": "a:0"}],
+                    "chunk_pages": {"a:0": [1]},
+                }
+            }
+        }
+        doc_b = {
+            "tables": {
+                "invoices": {
+                    "rows": [{"invoice_number": "inv-1 ", "note": "paid", "__chunk_index": "b:0"}],
+                    "chunk_pages": {"b:0": [3]},
+                }
+            }
+        }
+        rows, pages = union_buckets([("a", doc_a), ("b", doc_b)])
+        finalized, _ = reconcile_model(
+            bucketed_rows=rows, chunk_pages_by_index=pages, locked_model=MODEL
+        )
+        assert len(finalized["invoices"]) == 1
+        merged = finalized["invoices"][0]
+        assert merged["note"] == "paid"  # null filled from the other document
+
+    def test_provenance_pages_survive_document_prefixed_keys(self):
+        from app.services.reconciliation import reconcile_model
+
+        doc = {
+            "tables": {
+                "invoices": {
+                    "rows": [{"invoice_number": "X", "note": "n", "__chunk_index": "docZ:2"}],
+                    "chunk_pages": {"docZ:2": [7, 8]},
+                }
+            }
+        }
+        rows, pages = union_buckets([("docZ", doc)])
+        finalized, _ = reconcile_model(
+            bucketed_rows=rows, chunk_pages_by_index=pages, locked_model=MODEL
+        )
+        assert finalized["invoices"][0]["source_page_numbers"] == [7, 8]
