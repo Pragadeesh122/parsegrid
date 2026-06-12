@@ -286,6 +286,17 @@ export default function JobDetailClient({
             })()}
 
           {/* Documents */}
+          {(appendMutation.error || resolveMutation.error || deleteDocMutation.error) && (
+            <div className='rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-sm text-red-400'>
+              {
+                (
+                  (appendMutation.error ??
+                    resolveMutation.error ??
+                    deleteDocMutation.error) as Error
+                ).message
+              }
+            </div>
+          )}
           <DocumentsCard
             documents={job.documents}
             canAppend={job.status === "COMPLETED" && job.job_type === "FULL"}

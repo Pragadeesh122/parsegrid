@@ -146,6 +146,7 @@ export function NewJobClient({token}: NewJobClientProps) {
               </div>
               <button
                 onClick={() => removeFile(index)}
+                aria-label={`Remove ${file.name}`}
                 className='rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300'>
                 <svg
                   className='h-4 w-4'
