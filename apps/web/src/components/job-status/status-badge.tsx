@@ -26,6 +26,12 @@ const BADGE_STYLES: Record<string, string> = {
   PROVISIONING: EMERALD,
   COMPLETED: EMERALD,
   FAILED: "bg-red-500/10 text-red-400 border-red-500/20",
+  APPENDING: EMERALD,
+  AWAITING_APPEND_REVIEW: AMBER,
+  PENDING: NEUTRAL,
+  OCR_DONE: NEUTRAL_LIGHT,
+  EXTRACTED: EMERALD,
+  REJECTED: NEUTRAL,
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -44,6 +50,12 @@ const STATUS_LABELS: Record<string, string> = {
   PROVISIONING: "Provisioning",
   COMPLETED: "Completed",
   FAILED: "Failed",
+  APPENDING: "Adding Data",
+  AWAITING_APPEND_REVIEW: "Review Append",
+  PENDING: "Pending",
+  OCR_DONE: "OCR Done",
+  EXTRACTED: "Extracted",
+  REJECTED: "Rejected",
 };
 
 interface StatusBadgeProps {

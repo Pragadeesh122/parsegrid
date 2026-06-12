@@ -35,6 +35,8 @@ const STATUS_CONFIG: Record<
   PROVISIONING: { label: "Provisioning database", phase: 6 },
   COMPLETED: { label: "Completed", phase: 7 },
   FAILED: { label: "Failed", phase: -1 },
+  APPENDING: { label: "Adding Data", phase: 5 },
+  AWAITING_APPEND_REVIEW: { label: "Review Append", phase: 5 },
 };
 
 interface ProgressBarProps {

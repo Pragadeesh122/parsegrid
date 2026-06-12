@@ -180,7 +180,9 @@ export function DashboardClient({ token }: DashboardClientProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/40">
-                    {jobs.map((job) => (
+                    {jobs.map((job) => {
+                      const datasetName = job.documents[0]?.filename ?? "Dataset";
+                      return (
                       <tr
                         key={job.id}
                         className="transition-colors hover:bg-zinc-900/40"
@@ -206,7 +208,12 @@ export function DashboardClient({ token }: DashboardClientProps) {
                               </svg>
                             </div>
                             <span className="text-sm font-medium text-zinc-200 transition-colors group-hover:text-zinc-100">
-                              {job.filename}
+                              {datasetName}
+                              {job.document_count > 1 && (
+                                <span className="ml-1.5 text-xs font-mono text-zinc-500">
+                                  +{job.document_count - 1}
+                                </span>
+                              )}
                             </span>
                           </Link>
                         </td>
@@ -262,9 +269,9 @@ export function DashboardClient({ token }: DashboardClientProps) {
                           <div className="flex items-center justify-end gap-4">
                             <button
                               type="button"
-                              onClick={() => openDeleteDialog(job.id, job.filename)}
+                              onClick={() => openDeleteDialog(job.id, datasetName)}
                               disabled={deleteJobMutation.isPending}
-                              aria-label={`Delete ${job.filename}`}
+                              aria-label={`Delete ${datasetName}`}
                               title="Delete job"
                               className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                             >
@@ -295,7 +302,8 @@ export function DashboardClient({ token }: DashboardClientProps) {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

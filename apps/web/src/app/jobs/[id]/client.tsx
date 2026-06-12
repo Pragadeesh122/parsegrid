@@ -19,12 +19,17 @@ import {ProgressBar} from "@/components/job-status/progress-bar";
 import {ModelReview} from "@/components/model-review/model-review";
 import {ConnectionString} from "@/components/connection/conn-string";
 import {DataPreview} from "@/components/data-preview/data-table";
+import {DocumentsCard} from "@/components/documents/documents-card";
+import {AppendReview} from "@/components/documents/append-review";
 import type {DatabaseModel} from "@/lib/api-client";
 import {
+  useAppendDocument,
   useApproveModel,
+  useDeleteDocument,
   useDeleteJob,
   useJob,
   useRejectModel,
+  useResolveAppend,
   useTargetQuery,
 } from "@/hooks/use-jobs";
 import {useSSE} from "@/hooks/use-sse";
@@ -47,6 +52,9 @@ export default function JobDetailClient({
   const rejectMutation = useRejectModel(token ?? "");
   const deleteJobMutation = useDeleteJob(token ?? "");
   const targetQueryMutation = useTargetQuery(token ?? "");
+  const appendMutation = useAppendDocument(token ?? "");
+  const resolveMutation = useResolveAppend(token ?? "");
+  const deleteDocMutation = useDeleteDocument(token ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [targetQuery, setTargetQuery] = useState("");
@@ -61,7 +69,8 @@ export default function JobDetailClient({
     job.status !== "FAILED" &&
     job.status !== "MODEL_PROPOSED" &&
     job.status !== "AWAITING_REVIEW" &&
-    job.status !== "AWAITING_QUERY";
+    job.status !== "AWAITING_QUERY" &&
+    job.status !== "AWAITING_APPEND_REVIEW";
 
   useSSE({
     jobId,
@@ -84,7 +93,8 @@ export default function JobDetailClient({
         data.status === "COMPLETED" ||
         data.status === "FAILED" ||
         data.status === "AWAITING_QUERY" ||
-        data.status === "MODEL_PROPOSED"
+        data.status === "MODEL_PROPOSED" ||
+        data.status === "AWAITING_APPEND_REVIEW"
       ) {
         queryClient.invalidateQueries({queryKey: ["job", jobId]});
         queryClient.invalidateQueries({queryKey: ["jobs"]});
@@ -190,6 +200,8 @@ export default function JobDetailClient({
     );
   }
 
+  const datasetName = job.documents[0]?.filename ?? "Dataset";
+
   return (
     <AppShell>
       <div className='px-6 py-8 lg:px-10'>
@@ -213,7 +225,7 @@ export default function JobDetailClient({
             />
           </svg>
           <span className='max-w-[300px] truncate text-zinc-300'>
-            {job.filename}
+            {datasetName}
           </span>
         </div>
 
@@ -221,7 +233,13 @@ export default function JobDetailClient({
         <div className='mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between max-w-11/12'>
           <div>
             <h1 className='text-lg font-semibold tracking-tight text-zinc-100'>
-              {job.filename}
+              {datasetName}
+              {job.document_count > 1 && (
+                <span className='ml-2 text-xs font-mono text-zinc-500'>
+                  +{job.document_count - 1} more file
+                  {job.document_count > 2 ? "s" : ""}
+                </span>
+              )}
             </h1>
             <p className='mt-0.5 text-xs font-mono text-zinc-600'>{job.id}</p>
           </div>
@@ -229,7 +247,7 @@ export default function JobDetailClient({
             type='button'
             onClick={openDeleteDialog}
             disabled={isDeleting || deleteJobMutation.isPending}
-            aria-label={`Delete ${job.filename}`}
+            aria-label={`Delete ${datasetName}`}
             title='Delete job'
             className='inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 transition-colors hover:border-red-500/30 hover:bg-red-500/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50'>
             {isDeleting ? (
@@ -249,6 +267,34 @@ export default function JobDetailClient({
               errorMessage={job.error_message}
             />
           </div>
+
+          {/* Append review (compat gate) */}
+          {job.status === "AWAITING_APPEND_REVIEW" &&
+            (() => {
+              const pending = [...job.documents]
+                .reverse()
+                .find((d) => d.compat_report?.needs_review);
+              return pending ? (
+                <AppendReview
+                  document={pending}
+                  isSubmitting={resolveMutation.isPending}
+                  onResolve={(action) =>
+                    resolveMutation.mutate({jobId, documentId: pending.id, action})
+                  }
+                />
+              ) : null;
+            })()}
+
+          {/* Documents */}
+          <DocumentsCard
+            documents={job.documents}
+            canAppend={job.status === "COMPLETED" && job.job_type === "FULL"}
+            canDelete={job.status === "COMPLETED"}
+            token={token}
+            isAppending={appendMutation.isPending}
+            onAppend={(file) => appendMutation.mutate({jobId, file})}
+            onDelete={(documentId) => deleteDocMutation.mutate({jobId, documentId})}
+          />
 
           {/* Targeted Query Input */}
           {job.status === "AWAITING_QUERY" && (
@@ -335,14 +381,14 @@ export default function JobDetailClient({
               <div>
                 <dt className='text-zinc-500'>File Size</dt>
                 <dd className='mt-1 font-medium font-mono text-zinc-200'>
-                  {(job.file_size / 1024 / 1024).toFixed(2)} MB
+                  {(job.total_file_size / 1024 / 1024).toFixed(2)} MB
                 </dd>
               </div>
-              {job.page_count && (
+              {job.total_pages && (
                 <div>
                   <dt className='text-zinc-500'>Pages</dt>
                   <dd className='mt-1 font-medium font-mono text-zinc-200'>
-                    {job.page_count}
+                    {job.total_pages}
                   </dd>
                 </div>
               )}
@@ -359,7 +405,7 @@ export default function JobDetailClient({
       <ConfirmDialog
         open={deleteDialogOpen}
         title='Delete job permanently?'
-        description={`"${job.filename}" will be removed along with its uploaded file, parsed artifacts, extracted data, and provisioned output. This cannot be undone.`}
+        description={`"${datasetName}" will be removed along with its uploaded file, parsed artifacts, extracted data, and provisioned output. This cannot be undone.`}
         confirmLabel='Delete Job'
         confirmIcon={<TrashIcon className='h-5 w-5' weight='duotone' />}
         isPending={deleteJobMutation.isPending}
