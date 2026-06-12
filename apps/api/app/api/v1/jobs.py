@@ -61,15 +61,9 @@ async def create_job(
             detail="TARGETED jobs accept exactly one file",
         )
 
-    first = body.files[0]
     job = Job(
         id=str(uuid.uuid4()),
         user_id=user.sub,
-        # Legacy columns (dropped in the column-removal migration); kept in
-        # sync with documents[0] during the transition.
-        filename=first.filename,
-        file_key=first.file_key,
-        file_size=first.file_size,
         output_format=body.output_format,
         job_type=body.job_type,
         status=JobStatus.UPLOADED,

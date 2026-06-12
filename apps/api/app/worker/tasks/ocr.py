@@ -17,7 +17,6 @@ from app.worker.celery_app import celery_app
 from app.worker.db import (
     get_document_field,
     get_job_field,
-    list_job_documents,
     publish_status,
     update_document,
     update_job,
@@ -153,8 +152,7 @@ def ocr_complete(self, document_ids: list[str], job_id: str):
     """
     try:
         job = get_job_field(job_id, "job_type")
-        total_pages = sum(d["page_count"] or 0 for d in list_job_documents(job_id, "page_count"))
-        update_job(job_id, status="OCR_PROCESSING", progress=75.0, page_count=total_pages)
+        update_job(job_id, status="OCR_PROCESSING", progress=75.0)
         publish_status(job_id, "OCR_PROCESSING", 75.0)
 
         if job["job_type"] == "TARGETED":

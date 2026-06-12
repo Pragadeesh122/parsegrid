@@ -37,9 +37,6 @@ async def seeded_job(database_available, monkeypatch):
                 user_id="u1",
                 status=JobStatus.UPLOADED,
                 progress=0.0,
-                filename="a.pdf",
-                file_key="uploads/u1/x/a.pdf",
-                file_size=1,
             )
         )
         session.add(

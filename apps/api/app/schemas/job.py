@@ -103,9 +103,6 @@ class JobResponse(BaseModel):
 
     id: str
     user_id: str
-    filename: str
-    file_key: str
-    file_size: int
     status: JobStatus
     job_type: JobType
     output_format: OutputFormat
@@ -116,7 +113,6 @@ class JobResponse(BaseModel):
     section_map: list[SectionCandidate] | None = None
     connection_string: str | None = None
     error_message: str | None = None
-    page_count: int | None = None
     provisioned_rows: int | None = None
     provisioned_at: datetime | None = None
     target_ddl: str | None = None

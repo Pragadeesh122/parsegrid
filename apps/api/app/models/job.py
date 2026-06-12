@@ -86,20 +86,6 @@ class Job(Base, TimestampMixin):
         index=True,
         comment="User sub claim from Auth.js JWT",
     )
-    filename: Mapped[str] = mapped_column(
-        String(512),
-        nullable=False,
-    )
-    file_key: Mapped[str] = mapped_column(
-        String(1024),
-        nullable=False,
-        comment="S3 object key for the uploaded file",
-    )
-    file_size: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-    )
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status", create_constraint=True),
         nullable=False,
@@ -161,11 +147,6 @@ class Job(Base, TimestampMixin):
         Text,
         nullable=True,
     )
-    page_count: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="Total pages detected by OCR",
-    )
     provisioned_rows: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
@@ -199,7 +180,7 @@ class Job(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<Job(id={self.id!r}, status={self.status!r}, filename={self.filename!r})>"
+        return f"<Job(id={self.id!r}, status={self.status!r}, job_type={self.job_type!r})>"
 
 
 class Document(Base, TimestampMixin):
