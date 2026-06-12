@@ -59,3 +59,35 @@ async def test_connection_test_blocks_internal_target(client):
     body = res.json()
     assert body["success"] is False
     assert "internal" in body["message"].lower()
+
+
+MULTI_PAYLOAD = {
+    "files": [
+        {"filename": "jan.pdf", "file_key": "uploads/u/x/jan.pdf", "file_size": 100},
+        {"filename": "feb.pdf", "file_key": "uploads/u/y/feb.pdf", "file_size": 200},
+    ]
+}
+
+
+async def test_create_multi_file_lists_documents(client):
+    res = await client.post("/api/v1/jobs", json=MULTI_PAYLOAD, headers=auth_header("user-a"))
+    assert res.status_code == 201
+    job = res.json()
+    assert job["document_count"] == 2
+    assert [d["filename"] for d in job["documents"]] == ["jan.pdf", "feb.pdf"]
+    assert all(d["status"] == "PENDING" for d in job["documents"])
+
+
+async def test_legacy_single_file_body_still_works(client):
+    job = await _create(client, "user-a")
+    assert job["document_count"] == 1
+    assert job["documents"][0]["file_key"] == PAYLOAD["file_key"]
+
+
+async def test_targeted_rejects_multiple_files(client):
+    res = await client.post(
+        "/api/v1/jobs",
+        json={**MULTI_PAYLOAD, "job_type": "TARGETED"},
+        headers=auth_header("user-a"),
+    )
+    assert res.status_code == 400

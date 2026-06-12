@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session
 from app.core.security import TokenPayload
 from app.core.storage import delete_object_from_s3, delete_prefix_from_s3
-from app.models.job import Job, JobStatus, JobType
+from app.models.job import Document, Job, JobStatus, JobType
 from app.providers.factory import get_output_provider
 from app.schemas.job import (
     DataPreviewResponse,
@@ -43,19 +43,38 @@ async def create_job(
     user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> Job:
-    """Create a new extraction job after the file has been uploaded to S3."""
+    """Create a new extraction job after the file(s) have been uploaded to S3."""
+    if body.job_type == JobType.TARGETED and len(body.files) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="TARGETED jobs accept exactly one file",
+        )
+
+    first = body.files[0]
     job = Job(
         id=str(uuid.uuid4()),
         user_id=user.sub,
-        filename=body.filename,
-        file_key=body.file_key,
-        file_size=body.file_size,
+        # Legacy columns (dropped in the column-removal migration); kept in
+        # sync with documents[0] during the transition.
+        filename=first.filename,
+        file_key=first.file_key,
+        file_size=first.file_size,
         output_format=body.output_format,
         job_type=body.job_type,
         status=JobStatus.UPLOADED,
         progress=0.0,
     )
     db.add(job)
+    for spec in body.files:
+        db.add(
+            Document(
+                id=str(uuid.uuid4()),
+                job_id=job.id,
+                filename=spec.filename,
+                file_key=spec.file_key,
+                file_size=spec.file_size,
+            )
+        )
     await db.commit()
     await db.refresh(job)
 
@@ -140,11 +159,14 @@ async def delete_job(
             ),
         )
 
-    upload_prefix = f"{job.file_key.rsplit('/', 1)[0]}/" if "/" in job.file_key else None
-    if upload_prefix:
-        delete_prefix_from_s3(upload_prefix)
-    else:
-        delete_object_from_s3(job.file_key)
+    for document in job.documents:
+        upload_prefix = (
+            f"{document.file_key.rsplit('/', 1)[0]}/" if "/" in document.file_key else None
+        )
+        if upload_prefix:
+            delete_prefix_from_s3(upload_prefix)
+        else:
+            delete_object_from_s3(document.file_key)
     delete_prefix_from_s3(f"parsed/{job_id}/")
     delete_prefix_from_s3(f"extracted/{job_id}/")
 
