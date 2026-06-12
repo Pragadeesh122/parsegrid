@@ -46,7 +46,10 @@ def process_document(self, job_id: str, document_id: str, append: bool = False):
         publish_status(
             job_id, "APPENDING" if append else "OCR_PROCESSING", 5.0, document_id=document_id
         )
-        if not append:
+        if not append and get_job_field(job_id, "status")["status"] != "FAILED":
+            # Guard: a sibling document's terminal failure may have already
+            # marked the job FAILED — never resurrect it to OCR_PROCESSING
+            # (the chord callback will not fire, so it would stick forever).
             update_job(job_id, status="OCR_PROCESSING", progress=5.0)
 
         doc = get_document_field(document_id, "file_key", "filename")

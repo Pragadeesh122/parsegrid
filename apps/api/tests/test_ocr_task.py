@@ -26,7 +26,13 @@ class _Recorder:
 @pytest.fixture
 def recorder(monkeypatch):
     rec = _Recorder()
+    rec.job_status = "OCR_PROCESSING"
     monkeypatch.setattr(ocr_task, "update_job", lambda job_id, **kw: rec.job_updates.append(kw))
+    monkeypatch.setattr(
+        ocr_task,
+        "get_job_field",
+        lambda job_id, *cols: {"status": rec.job_status},
+    )
     monkeypatch.setattr(
         ocr_task,
         "update_document",
@@ -85,6 +91,18 @@ def test_append_mode_dispatches_single_document_extraction(recorder, monkeypatch
     )
     ocr_task.process_document.run("job-1", "doc-2", append=True)
     assert dispatched == [{"args": ["job-1"], "kwargs": {"document_id": "doc-2"}}]
+
+
+def test_create_mode_never_resurrects_a_failed_job(recorder, monkeypatch):
+    # A sibling document's terminal failure already marked the job FAILED;
+    # this document's start must not flip it back to OCR_PROCESSING.
+    recorder.job_status = "FAILED"
+    monkeypatch.setattr(
+        "app.worker.tasks.extract.run_extraction",
+        type("T", (), {"apply_async": staticmethod(lambda **kw: None)}),
+    )
+    ocr_task.process_document.run("job-1", "doc-4")
+    assert {"status": "OCR_PROCESSING", "progress": 5.0} not in recorder.job_updates
 
 
 def test_append_failure_keeps_job_completed(recorder, monkeypatch):
