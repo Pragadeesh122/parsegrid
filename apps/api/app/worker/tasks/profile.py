@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.schemas.extraction_model import DocumentProfile
 from app.services.safe_errors import public_error_message
 from app.worker.celery_app import celery_app
-from app.worker.db import publish_status, update_job
+from app.worker.db import list_job_documents, publish_status, update_job
 
 logger = logging.getLogger(__name__)
 
@@ -35,33 +35,60 @@ def profile_and_propose(self, job_id: str):
         publish_status(job_id, "PROFILING", 0.0)
         update_job(job_id, status="PROFILING", progress=0.0)
 
-        # 1. Load the OCR JSON from S3.
+        # 1. Load every OCR-complete document's OCR JSON from S3.
         from app.core.storage import get_s3_client
 
         s3 = get_s3_client()
-        ocr_key = f"parsed/{job_id}/ocr_result.json"
-        response = s3.get_object(Bucket=settings.s3_bucket, Key=ocr_key)
-        ocr_json = json.loads(response["Body"].read().decode("utf-8"))
+        documents = [
+            d
+            for d in list_job_documents(job_id, "id", "filename", "page_count", "status")
+            if d["status"] in ("OCR_DONE", "EXTRACTED")
+        ]
+        if not documents:
+            raise ValueError("no OCR-complete documents to profile")
+
+        ocr_by_doc: dict[str, dict] = {}
+        for d in documents:
+            key = f"parsed/{job_id}/{d['id']}/ocr_result.json"
+            response = s3.get_object(Bucket=settings.s3_bucket, Key=key)
+            ocr_by_doc[d["id"]] = json.loads(response["Body"].read().decode("utf-8"))
 
         publish_status(job_id, "PROFILING", 20.0)
 
-        # 2. Sample pages + region histogram.
-        from app.services.profiling import build_profile_context, profile_document
+        # 2. Split the sampling budget and profile each document.
+        from app.services.consolidation import allocate_sampling_budget
+        from app.services.profiling import (
+            MAX_SAMPLED_PAGES,
+            build_profile_context,
+            profile_document,
+        )
 
-        sampled_pages, region_summary = profile_document(ocr_json)
-        context_text = build_profile_context(sampled_pages, ocr_json)
-        total_pages = ocr_json.get("page_count") or 0
+        page_counts = {d["id"]: d["page_count"] or 0 for d in documents}
+        budgets = allocate_sampling_budget(page_counts, budget=MAX_SAMPLED_PAGES)
+
+        sampled_by_doc: dict[str, list[int]] = {}
+        merged_histogram: dict[str, int] = {}
+        context_blocks: list[str] = []
+        filenames = {d["id"]: d["filename"] for d in documents}
+        for doc_id in sorted(ocr_by_doc):
+            sampled, histogram = profile_document(ocr_by_doc[doc_id], budget=budgets.get(doc_id))
+            sampled_by_doc[doc_id] = sampled
+            for rtype, count in histogram.items():
+                merged_histogram[rtype] = merged_histogram.get(rtype, 0) + count
+            block = build_profile_context(sampled, ocr_by_doc[doc_id])
+            context_blocks.append(f"=== Document: {filenames[doc_id]} ===\n{block}")
+        context_text = "\n\n".join(context_blocks)
+        total_pages = sum(page_counts.values())
+        all_sampled = sorted({p for pages in sampled_by_doc.values() for p in pages})
 
         logger.info(
-            f"Job {job_id}: profiling sampled {len(sampled_pages)}/{total_pages} pages, "
-            f"regions={region_summary}"
+            f"Job {job_id}: profiled {len(documents)} document(s), "
+            f"budgets={budgets}, regions={merged_histogram}"
         )
 
         publish_status(job_id, "PROFILING", 50.0)
 
-        # 3. LLM proposes the DatabaseModel. The first call has no profile —
-        #    we use the LLM's response to derive sections and the
-        #    recommended_extraction_type, then build the DocumentProfile.
+        # 3. LLM proposes the DatabaseModel from the combined context.
         from app.providers.factory import get_llm_provider
 
         llm = get_llm_provider()
@@ -75,18 +102,19 @@ def profile_and_propose(self, job_id: str):
 
         document_profile = DocumentProfile(
             total_pages=total_pages,
-            sampled_pages=sampled_pages,
-            region_summary=region_summary,
+            sampled_pages=all_sampled,
+            sampled_pages_by_document=sampled_by_doc,
+            region_summary=merged_histogram,
             sections=[],  # MVP: profiling does not produce sections; review UI handles routing
             recommended_extraction_type=proposed_model.extraction_type,
             rationale=(
-                f"Sampled {len(sampled_pages)} pages out of {total_pages}. "
+                f"Sampled {sum(len(v) for v in sampled_by_doc.values())} pages "
+                f"across {len(documents)} document(s) ({total_pages} total pages). "
                 f"LLM proposed {len(proposed_model.tables)} table(s) "
                 f"with {len(proposed_model.relationships)} relationship(s)."
             ),
         )
 
-        # 4. Persist and transition.
         update_job(
             job_id,
             status="MODEL_PROPOSED",

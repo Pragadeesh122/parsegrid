@@ -96,6 +96,10 @@ class DocumentProfile(BaseModel):
 
     total_pages: int
     sampled_pages: list[int]
+    sampled_pages_by_document: dict[str, list[int]] = Field(
+        default_factory=dict,
+        description="Document id → sampled page numbers (multi-file datasets).",
+    )
     region_summary: dict[str, int] = Field(
         default_factory=dict,
         description="Histogram of OCR region_type across the whole document.",
