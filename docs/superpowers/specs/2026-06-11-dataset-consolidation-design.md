@@ -1,7 +1,7 @@
 # Dataset Consolidation: Multi-File Jobs + Append-to-Locked-Schema
 
 **Date:** 2026-06-11
-**Status:** Approved
+**Status:** Implemented
 **Sub-project:** 1 of 4 (OS-release roadmap: Foundation ✅ → **Dataset Consolidation** → Export → NL Query)
 
 ## Context
