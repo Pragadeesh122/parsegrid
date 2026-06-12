@@ -37,6 +37,8 @@ class JobStatus(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(stat
     RECONCILING = "RECONCILING"
     TRANSLATING = "TRANSLATING"
     PROVISIONING = "PROVISIONING"
+    APPENDING = "APPENDING"
+    AWAITING_APPEND_REVIEW = "AWAITING_APPEND_REVIEW"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
@@ -54,6 +56,18 @@ class OutputFormat(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(s
     SQL = "SQL"
     GRAPH = "GRAPH"
     VECTOR = "VECTOR"
+
+
+class DocumentStatus(str, enum.Enum):  # noqa: UP042 -- str mixin needed for str(status) == "VALUE"
+    """Per-file lifecycle inside a dataset Job."""
+
+    PENDING = "PENDING"
+    OCR_PROCESSING = "OCR_PROCESSING"
+    OCR_DONE = "OCR_DONE"
+    EXTRACTING = "EXTRACTING"
+    EXTRACTED = "EXTRACTED"
+    FAILED = "FAILED"
+    REJECTED = "REJECTED"
 
 
 class Job(Base, TimestampMixin):
@@ -177,9 +191,55 @@ class Job(Base, TimestampMixin):
         back_populates="job",
         cascade="all, delete-orphan",
     )
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="Document.created_at",
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return f"<Job(id={self.id!r}, status={self.status!r}, filename={self.filename!r})>"
+
+
+class Document(Base, TimestampMixin):
+    """One uploaded file inside a dataset Job (Dataset Consolidation)."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    job_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[DocumentStatus] = mapped_column(
+        Enum(DocumentStatus, name="document_status", create_constraint=True),
+        nullable=False,
+        default=DocumentStatus.PENDING,
+    )
+    extracted_buckets: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="This file's pre-reconciliation output: "
+        '{"tables": {tbl: {"rows": [...], "chunk_pages": {chunk_key: [pages]}}}}',
+    )
+    compat_report: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Append compatibility stats; null for founding documents.",
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    job: Mapped["Job"] = relationship(back_populates="documents")
+
+    def __repr__(self) -> str:
+        return f"<Document(id={self.id!r}, job_id={self.job_id!r}, status={self.status!r})>"
 
 
 class DocumentChunk(Base):
