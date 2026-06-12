@@ -121,7 +121,11 @@ def process_document(self, job_id: str, document_id: str, append: bool = False):
         logger.exception(f"Job {job_id} document {document_id}: OCR failed: {exc}")
         update_document(document_id, status="FAILED", error_message=public_error_message(exc))
         if append:
-            # Failure isolation: the dataset stays live.
+            # Failure isolation: the dataset stays live. Swallow (don't
+            # re-raise) so the task_failure signal cannot overwrite the
+            # COMPLETED status back to FAILED; hard crashes still bypass
+            # this handler and reach the signal, where FAILED is the
+            # recoverable answer (rebuild endpoint).
             update_job(job_id, status="COMPLETED", progress=100.0)
             publish_status(
                 job_id,
@@ -130,7 +134,7 @@ def process_document(self, job_id: str, document_id: str, append: bool = False):
                 error_message=public_error_message(exc),
                 document_id=document_id,
             )
-            raise
+            return None
         publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
         update_job(job_id, status="FAILED", error_message=public_error_message(exc))
         raise self.retry(exc=exc, countdown=60)

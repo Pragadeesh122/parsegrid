@@ -216,6 +216,9 @@ def run_extraction(self, job_id: str, document_id: str | None = None):
     except Exception as exc:
         logger.exception(f"Job {job_id}: extraction orchestration failed")
         if document_id is not None:
+            # Failure isolation: swallow so the task_failure signal cannot
+            # overwrite COMPLETED back to FAILED; hard crashes still reach
+            # the signal where FAILED is the recoverable answer.
             update_document(document_id, status="FAILED", error_message=public_error_message(exc))
             update_job(job_id, status="COMPLETED", progress=100.0)
             publish_status(
@@ -225,9 +228,9 @@ def run_extraction(self, job_id: str, document_id: str | None = None):
                 error_message=public_error_message(exc),
                 document_id=document_id,
             )
-        else:
-            publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
-            update_job(job_id, status="FAILED", error_message=public_error_message(exc))
+            return
+        publish_status(job_id, "FAILED", 0.0, error_message=public_error_message(exc))
+        update_job(job_id, status="FAILED", error_message=public_error_message(exc))
         raise
 
 

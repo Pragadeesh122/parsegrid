@@ -111,7 +111,9 @@ def test_append_failure_keeps_job_completed(recorder, monkeypatch):
             raise RuntimeError("ocr exploded")
 
     monkeypatch.setattr("app.providers.factory.get_ocr_provider", lambda: _BoomProvider())
-    with pytest.raises(RuntimeError):
-        ocr_task.process_document.run("job-1", "doc-3", append=True)
+    # Swallowed, not re-raised: re-raising would fire the task_failure signal,
+    # which overwrites the COMPLETED status back to FAILED.
+    result = ocr_task.process_document.run("job-1", "doc-3", append=True)
+    assert result is None
     assert any(d == "doc-3" and kw.get("status") == "FAILED" for d, kw in recorder.doc_updates)
     assert {"status": "COMPLETED", "progress": 100.0} in recorder.job_updates

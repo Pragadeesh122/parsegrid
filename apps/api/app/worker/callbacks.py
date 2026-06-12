@@ -32,9 +32,6 @@ _JOB_ID_ARG_INDEX: dict[str, int] = {
 
 # Tasks that carry a document_id positional arg (worker-crash safety: the
 # in-flight document must not strand in OCR_PROCESSING/EXTRACTING).
-# extract_table_chunk is forward-dated: its args[1] becomes document_id when
-# the per-document extraction rewrite lands; until then the lookup misses an
-# id and the UPDATE is a no-op.
 _DOCUMENT_ID_ARG_INDEX: dict[str, int] = {
     "app.worker.tasks.ocr.process_document": 1,
     "app.worker.tasks.extract.extract_table_chunk": 1,
