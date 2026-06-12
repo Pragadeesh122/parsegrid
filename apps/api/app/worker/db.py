@@ -91,6 +91,54 @@ def get_job_field(job_id: str, *columns: str) -> dict:
         return dict(zip(columns, row))
 
 
+def update_document(document_id: str, **fields) -> None:
+    """Update document fields by id (mirrors update_job)."""
+    if not fields:
+        return
+
+    set_clauses = ", ".join(f"{k} = :{k}" for k in fields)
+    engine = get_sync_engine()
+
+    with Session(engine) as session:
+        session.execute(
+            text(f"UPDATE documents SET {set_clauses}, updated_at = NOW() WHERE id = :document_id"),
+            {"document_id": document_id, **fields},
+        )
+        session.commit()
+
+
+def get_document_field(document_id: str, *columns: str) -> dict:
+    """Read specific columns from a document record."""
+    if not columns:
+        raise ValueError("At least one column name is required")
+
+    col_list = ", ".join(columns)
+    engine = get_sync_engine()
+
+    with Session(engine) as session:
+        row = session.execute(
+            text(f"SELECT {col_list} FROM documents WHERE id = :document_id"),
+            {"document_id": document_id},
+        ).one()
+        return dict(zip(columns, row))
+
+
+def list_job_documents(job_id: str, *columns: str) -> list[dict]:
+    """Read specific columns for every document of a job, oldest first."""
+    if not columns:
+        raise ValueError("At least one column name is required")
+
+    col_list = ", ".join(columns)
+    engine = get_sync_engine()
+
+    with Session(engine) as session:
+        rows = session.execute(
+            text(f"SELECT {col_list} FROM documents WHERE job_id = :job_id ORDER BY created_at"),
+            {"job_id": job_id},
+        ).all()
+        return [dict(zip(columns, row)) for row in rows]
+
+
 def publish_status(job_id: str, status: str, progress: float, **extra) -> None:
     """Publish a status update to Redis PubSub for SSE streaming."""
     r = _get_redis_client()
