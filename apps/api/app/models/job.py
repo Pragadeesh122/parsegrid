@@ -194,7 +194,7 @@ class Job(Base, TimestampMixin):
     documents: Mapped[list["Document"]] = relationship(
         back_populates="job",
         cascade="all, delete-orphan",
-        order_by="Document.created_at",
+        order_by="(Document.created_at, Document.id)",
         lazy="selectin",
     )
 

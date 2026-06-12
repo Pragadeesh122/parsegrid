@@ -1,6 +1,7 @@
 """ParseGrid API — Job CRUD and lifecycle endpoints."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -65,7 +66,10 @@ async def create_job(
         progress=0.0,
     )
     db.add(job)
-    for spec in body.files:
+    # Explicit micro-offset timestamps: server_default now() is transaction
+    # time, so same-batch documents would tie and lose their upload order.
+    batch_started_at = datetime.now(UTC)
+    for position, spec in enumerate(body.files):
         db.add(
             Document(
                 id=str(uuid.uuid4()),
@@ -73,6 +77,7 @@ async def create_job(
                 filename=spec.filename,
                 file_key=spec.file_key,
                 file_size=spec.file_size,
+                created_at=batch_started_at + timedelta(microseconds=position),
             )
         )
     await db.commit()
