@@ -106,3 +106,22 @@ def test_no_extracted_documents_fails_loud(wired, monkeypatch):
     with pytest.raises(ValueError):
         rebuild_task.rebuild_dataset.run("job-1")
     assert any(kw.get("status") == "FAILED" for kw in wired["job_updates"])
+
+
+def test_transient_s3_error_during_adoption_fails_loud(wired, monkeypatch):
+    # Only NoSuchKey/404 may skip a legacy document; a transient S3 error
+    # must not silently rebuild the dataset without the founding rows.
+    from botocore.exceptions import ClientError
+
+    docs = [{"id": "d1", "status": "EXTRACTED", "extracted_buckets": None}]
+    monkeypatch.setattr(rebuild_task, "list_job_documents", lambda job_id, *c: docs)
+
+    class _OutageS3:
+        def get_object(self, Bucket, Key):  # noqa: N803
+            raise ClientError({"Error": {"Code": "503"}}, "GetObject")
+
+    monkeypatch.setattr("app.core.storage.get_s3_client", lambda: _OutageS3())
+
+    with pytest.raises(ClientError):
+        rebuild_task.rebuild_dataset.run("job-1")
+    assert any(kw.get("status") == "FAILED" for kw in wired["job_updates"])

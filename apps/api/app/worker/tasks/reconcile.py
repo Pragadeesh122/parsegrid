@@ -127,13 +127,20 @@ def _load_document_buckets(job_id: str) -> list[tuple[str, dict]]:
 
 
 def _adopt_legacy_buckets(job_id: str, document_id: str) -> dict | None:
+    from botocore.exceptions import ClientError
+
     from app.core.storage import get_s3_client
 
     s3 = get_s3_client()
     key = f"extracted/{job_id}/merged_buckets.json"
     try:
         response = s3.get_object(Bucket=settings.s3_bucket, Key=key)
-    except Exception:
+    except ClientError as exc:
+        # Only a genuinely missing legacy file may be skipped; transient S3
+        # errors must fail loud or the rebuild silently shrinks the dataset.
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code not in {"NoSuchKey", "404"}:
+            raise
         logger.warning(
             f"Job {job_id}: document {document_id} has no buckets and no legacy "
             f"{key} — it cannot contribute to rebuilds"
