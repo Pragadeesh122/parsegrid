@@ -83,6 +83,9 @@ def translate_and_provision(self, job_id: str):
             provisioned_rows=result.rows_inserted,
             provisioned_at=now,
             target_ddl=result.ddl_executed,
+            # Clear any stale failure from a prior run — a successful rebuild
+            # must not leave the job showing an old error.
+            error_message=None,
         )
 
         publish_status(
