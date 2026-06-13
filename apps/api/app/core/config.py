@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # Share of appended-document rows allowed to miss primary-key components
     # before the append pauses for human review.
     append_max_pk_null_ratio: float = 0.5
+    # A table with more rows than this skips LLM entity resolution (which sends
+    # the whole table in one call) and relies on deterministic natural-key
+    # dedupe — keeps reconcile bounded in time and cost on large extractions.
+    entity_resolution_max_rows: int = 300
 
     # --- LlamaParse ---
     llama_cloud_api_key: str = ""

@@ -44,9 +44,11 @@ celery_app.conf.update(
         "app.worker.tasks.translate.*": {"queue": "translation"},
         "app.worker.tasks.rag.*": {"queue": "ocr"},
     },
-    # Task limits
-    task_time_limit=600,  # 10 min hard limit
-    task_soft_time_limit=540,  # 9 min soft limit
+    # Task limits. Reconcile + provision over a large multi-table extraction
+    # (tens of thousands of rows) needs real headroom; the old 10-min cap
+    # killed it mid-reconcile.
+    task_time_limit=1800,  # 30 min hard limit
+    task_soft_time_limit=1680,  # 28 min soft limit
     # Retry behavior
     task_acks_late=True,
     worker_prefetch_multiplier=1,

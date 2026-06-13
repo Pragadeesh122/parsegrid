@@ -85,3 +85,18 @@ def test_unaccounted_rows_pass_through(monkeypatch):
     assert len(out) == 2
     assert {"name": "B"} in out
     assert any("not in LLM response" in n for n in notes)
+
+
+def test_large_table_skips_llm_and_uses_deterministic_dedupe(monkeypatch):
+    # Above the row cap, entity_resolution must NOT construct the OpenAI client
+    # — it returns rows unchanged for canonicalize_parents to dedupe.
+    class _Boom:
+        def __init__(self, api_key=None):
+            raise AssertionError("OpenAI must not be constructed above the row cap")
+
+    monkeypatch.setattr("openai.OpenAI", _Boom)
+    monkeypatch.setattr("app.core.config.settings.entity_resolution_max_rows", 10, raising=True)
+    rows = [{"name": f"Person {i}", "email": None} for i in range(11)]
+    out, notes = entity_resolution(rows, PEOPLE, ["name"])
+    assert out == rows
+    assert any("exceeds the 10-row LLM cap" in n for n in notes)

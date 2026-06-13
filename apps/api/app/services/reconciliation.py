@@ -271,10 +271,22 @@ def entity_resolution(
     if not needs_resolution(rows, pk_columns):
         return rows, notes
 
+    from app.core.config import settings
+
+    # Entity resolution sends the whole table to the LLM in one call, so it
+    # does not scale to large tables (cost, latency, and context limits). Above
+    # the cap, skip the LLM entirely and let canonicalize_parents() dedupe
+    # deterministically by natural key.
+    if len(rows) > settings.entity_resolution_max_rows:
+        notes.append(
+            f"entity_resolution skipped for {table.table_name}: {len(rows)} rows "
+            f"exceeds the {settings.entity_resolution_max_rows}-row LLM cap; "
+            "deterministic natural-key dedupe applied instead"
+        )
+        return rows, notes
+
     try:
         from openai import OpenAI
-
-        from app.core.config import settings
 
         client = OpenAI(api_key=settings.openai_api_key)
     except Exception as exc:  # pragma: no cover
