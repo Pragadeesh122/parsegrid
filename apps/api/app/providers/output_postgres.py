@@ -65,18 +65,27 @@ class PostgresOutputProvider(BaseOutputProvider):
 
         try:
             with engine.connect() as conn:
-                # 1. Isolated schema.
-                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+                # 1. Isolated schema. Drop-and-recreate so re-provisioning
+                #    (a dataset rebuild after an append) starts from a clean
+                #    slate — the output DB is a cache rebuilt from buckets, so
+                #    leftover tables/rows from a prior run must not survive.
+                conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+                conn.execute(text(f'CREATE SCHEMA "{schema_name}"'))
                 conn.execute(text(f'SET search_path TO "{schema_name}"'))
                 logger.info(f"Created schema: {schema_name}")
 
                 # 2. DDL — already validated and ordered (CREATE then ALTER).
+                #    Each statement runs in its own SAVEPOINT so a single
+                #    failure rolls back to the savepoint instead of poisoning
+                #    the whole transaction (begin_nested manages the savepoint
+                #    lifecycle correctly).
                 for stmt in ddl_statements:
                     stripped = stmt.strip()
                     if not stripped:
                         continue
                     try:
-                        conn.execute(text(stripped))
+                        with conn.begin_nested():
+                            conn.execute(text(stripped))
                     except Exception as e:
                         logger.warning(
                             f"DDL statement failed (continuing): {e}\n  SQL: {stripped[:200]}"
@@ -176,14 +185,15 @@ def _insert_table(
 
     inserted = 0
     for row in rows:
+        # begin_nested() issues a SAVEPOINT and, on exception, rolls back to
+        # it automatically — leaving the outer transaction healthy. A bad row
+        # is skipped without poisoning the rest of the insert.
         try:
-            conn.execute(text("SAVEPOINT row_sp"))
-            params = _build_params(row, all_columns)
-            conn.execute(text(insert_sql), params)
-            conn.execute(text("RELEASE SAVEPOINT row_sp"))
+            with conn.begin_nested():
+                params = _build_params(row, all_columns)
+                conn.execute(text(insert_sql), params)
             inserted += 1
         except Exception as e:
-            conn.execute(text("ROLLBACK TO SAVEPOINT row_sp"))
             logger.warning(
                 f"Insert failed for row in {schema_name}.{table_def.table_name} (skipping): {e}"
             )
