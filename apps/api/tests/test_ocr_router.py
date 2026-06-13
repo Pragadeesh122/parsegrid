@@ -1,4 +1,4 @@
-from app.providers.ocr_paddle import _is_page_scanned
+from app.providers.ocr_rapid import _is_page_scanned
 
 
 class _FakePage:

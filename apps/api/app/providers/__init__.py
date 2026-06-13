@@ -56,7 +56,7 @@ class BaseOCRProvider(ABC):
     """Abstract interface for OCR providers.
 
     Implementations:
-    - PaddleOCRProvider (default, local, air-gapped)
+    - RapidOCRProvider (default, local, air-gapped, PP-OCR via ONNX Runtime)
     - Future: TesseractProvider, LlamaParseProvider, etc.
     """
 

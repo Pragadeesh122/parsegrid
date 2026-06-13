@@ -26,9 +26,9 @@ dependencies = [
     # AI / LLM
     "openai>=1.60.0",
     "openai-agents>=0.1.0",
-    # OCR (local, air-gapped)
-    "paddlepaddle>=3.0.0",
-    "paddleocr>=2.9.0",
+    # OCR (local, air-gapped) — PP-OCR models via ONNX Runtime. RapidOCR
+    # replaces PaddlePaddle, whose native build segfaults on linux/arm64.
+    "rapidocr-onnxruntime>=1.4.0",
     # PDF processing
     "pymupdf>=1.25.0",
     # Utilities

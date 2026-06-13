@@ -20,12 +20,12 @@ from app.providers import (
 def get_ocr_provider() -> BaseOCRProvider:
     """Return the configured OCR provider instance.
 
-    Default: PaddleOCRProvider (local, air-gapped)
+    Default: RapidOCRProvider (local, air-gapped, PP-OCR models via ONNX Runtime)
     Future: TesseractProvider, LlamaParseProvider, etc.
     """
-    from app.providers.ocr_paddle import PaddleOCRProvider
+    from app.providers.ocr_rapid import RapidOCRProvider
 
-    return PaddleOCRProvider()
+    return RapidOCRProvider()
 
 
 @lru_cache(maxsize=1)

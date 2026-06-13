@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System libraries PaddleOCR's OpenCV (cv2) loads at import time. Without
-# these the scanned-page OCR path fails with
+# System libraries the OCR provider's OpenCV (cv2, pulled in by RapidOCR)
+# loads at import time. Without these the scanned-page OCR path fails with
 # "ImportError: libGL.so.1: cannot open shared object file".
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
