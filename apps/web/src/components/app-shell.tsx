@@ -30,10 +30,6 @@ const AWAITING_STATUSES = new Set([
   "AWAITING_APPEND_REVIEW",
 ]);
 
-// Cap on completed/failed jobs shown in the sidebar; active jobs are always
-// shown in full since they are few and transient.
-const MAX_DONE_JOBS = 8;
-
 function jobDotClass(status: string): string {
   if (status === "FAILED") return "bg-red-500";
   if (status === "COMPLETED") return "bg-emerald-500";
@@ -78,13 +74,15 @@ export function AppShell({children, token}: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {data: jobsData} = useJobs(token ?? "");
 
+  // useJobs fetches the most-recent page (limit 20); every loaded job is
+  // listed in the scrollable sidebar. "View all" only appears when the
+  // server holds more jobs than were loaded — i.e. genuinely more than the
+  // sidebar can show, not because of an arbitrary display cap.
   const allJobs = jobsData?.jobs ?? [];
   const totalJobs = jobsData?.total ?? allJobs.length;
   const activeJobs = allJobs.filter((j) => !TERMINAL_STATUSES.has(j.status));
-  const doneJobs = allJobs
-    .filter((j) => TERMINAL_STATUSES.has(j.status))
-    .slice(0, MAX_DONE_JOBS);
-  const hasMore = totalJobs > activeJobs.length + doneJobs.length;
+  const doneJobs = allJobs.filter((j) => TERMINAL_STATUSES.has(j.status));
+  const hasMore = totalJobs > allJobs.length;
 
   const user = session?.user;
   const initials = user?.name
