@@ -16,27 +16,31 @@ const PHASES = [
   { key: "provision", label: "Provision" },
 ] as const;
 
+// Each status owns a band of the overall 0–100 bar (`phase` drives the phase
+// indicators below). `band` is [start, end]: the bar fills from `start` to
+// `end` as the backend's per-stage progress goes 0→100, so overall progress
+// only ever moves forward — it never resets to 0 between pipeline stages.
 const STATUS_CONFIG: Record<
   string,
-  { label: string; phase: number }
+  { label: string; phase: number; band: [number, number] }
 > = {
-  UPLOADED: { label: "Uploaded", phase: 0 },
-  OCR_PROCESSING: { label: "Reading document", phase: 1 },
-  INDEXING: { label: "Indexing chunks", phase: 1 },
-  AWAITING_QUERY: { label: "Ready for your query", phase: 3 },
-  PROFILING: { label: "Profiling document", phase: 2 },
-  MODEL_PROPOSED: { label: "Model ready for review", phase: 3 },
-  AWAITING_REVIEW: { label: "Awaiting your review", phase: 3 },
-  MODEL_LOCKED: { label: "Model locked", phase: 3 },
-  EXTRACTING: { label: "Extracting data", phase: 4 },
-  MERGING: { label: "Merging results", phase: 4 },
-  RECONCILING: { label: "Reconciling rows", phase: 5 },
-  TRANSLATING: { label: "Generating DDL", phase: 5 },
-  PROVISIONING: { label: "Provisioning database", phase: 6 },
-  COMPLETED: { label: "Completed", phase: 7 },
-  FAILED: { label: "Failed", phase: -1 },
-  APPENDING: { label: "Adding Data", phase: 5 },
-  AWAITING_APPEND_REVIEW: { label: "Review Append", phase: 5 },
+  UPLOADED: { label: "Uploaded", phase: 0, band: [0, 5] },
+  OCR_PROCESSING: { label: "Reading document", phase: 1, band: [5, 25] },
+  INDEXING: { label: "Indexing chunks", phase: 1, band: [5, 25] },
+  AWAITING_QUERY: { label: "Ready for your query", phase: 3, band: [25, 25] },
+  PROFILING: { label: "Profiling document", phase: 2, band: [25, 40] },
+  MODEL_PROPOSED: { label: "Model ready for review", phase: 3, band: [40, 40] },
+  AWAITING_REVIEW: { label: "Awaiting your review", phase: 3, band: [40, 40] },
+  MODEL_LOCKED: { label: "Model locked", phase: 3, band: [45, 48] },
+  EXTRACTING: { label: "Extracting data", phase: 4, band: [48, 70] },
+  MERGING: { label: "Merging results", phase: 4, band: [70, 78] },
+  RECONCILING: { label: "Reconciling rows", phase: 5, band: [78, 86] },
+  TRANSLATING: { label: "Generating DDL", phase: 5, band: [86, 92] },
+  PROVISIONING: { label: "Provisioning database", phase: 6, band: [92, 99] },
+  COMPLETED: { label: "Completed", phase: 7, band: [100, 100] },
+  FAILED: { label: "Failed", phase: -1, band: [0, 0] },
+  APPENDING: { label: "Adding Data", phase: 5, band: [48, 78] },
+  AWAITING_APPEND_REVIEW: { label: "Review Append", phase: 5, band: [78, 78] },
 };
 
 interface ProgressBarProps {
@@ -53,6 +57,17 @@ export function ProgressBar({
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.UPLOADED;
   const isFailed = status === "FAILED";
   const isCompleted = status === "COMPLETED";
+
+  // Map the per-stage progress (0–100, resets each stage) into this status's
+  // band so the displayed bar is monotonic across the whole pipeline.
+  const [bandStart, bandEnd] = config.band;
+  const stageFraction = Math.min(Math.max(progress, 0), 100) / 100;
+  const overall = isFailed
+    ? 0
+    : Math.round(bandStart + (bandEnd - bandStart) * stageFraction);
+
+  // Awaiting-user and terminal states are not "working"; everything else is.
+  const isActive = !isCompleted && !isFailed && !status.startsWith("AWAITING");
 
   return (
     <div className="space-y-5">
@@ -80,17 +95,17 @@ export function ProgressBar({
           </span>
         </div>
         <span className="text-sm font-mono text-zinc-500">
-          {Math.round(progress)}%
+          {isFailed ? "—" : `${overall}%`}
         </span>
       </div>
 
-      {/* Progress bar */}
-      <div className="h-1 overflow-hidden rounded-full bg-zinc-800">
+      {/* Progress bar — overall (monotonic) fill with an activity shimmer. */}
+      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
         <div
-          className={`h-full rounded-full transition-all duration-700 ease-out ${
+          className={`relative h-full overflow-hidden rounded-full transition-all duration-700 ease-out ${
             isFailed ? "bg-red-500" : "bg-emerald-500"
-          }`}
-          style={{ width: `${Math.min(progress, 100)}%` }}
+          } ${isActive ? "progress-shimmer" : ""}`}
+          style={{ width: isFailed ? "100%" : `${Math.max(overall, 2)}%` }}
         />
       </div>
 
