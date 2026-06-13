@@ -10,11 +10,16 @@ import Link from "next/link";
 import {usePathname} from "next/navigation";
 import {useSession, signOut} from "next-auth/react";
 import {useJobs} from "@/hooks/use-jobs";
+import type {Job} from "@/lib/api-client";
 
 interface AppShellProps {
   children: React.ReactNode;
   token?: string | null;
 }
+
+// Terminal states — everything else is "active" (needs the user's attention
+// or is still being processed) and gets surfaced first in the sidebar.
+const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED"]);
 
 // Status → sidebar dot. Awaiting-user states are amber, terminal-good emerald,
 // failure red, everything else is in-flight (pulsing emerald).
@@ -25,6 +30,10 @@ const AWAITING_STATUSES = new Set([
   "AWAITING_APPEND_REVIEW",
 ]);
 
+// Cap on completed/failed jobs shown in the sidebar; active jobs are always
+// shown in full since they are few and transient.
+const MAX_DONE_JOBS = 8;
+
 function jobDotClass(status: string): string {
   if (status === "FAILED") return "bg-red-500";
   if (status === "COMPLETED") return "bg-emerald-500";
@@ -32,12 +41,50 @@ function jobDotClass(status: string): string {
   return "bg-emerald-500 animate-pulse";
 }
 
+function SidebarJobLink({
+  job,
+  isActive,
+  onNavigate,
+}: {
+  job: Job;
+  isActive: boolean;
+  onNavigate: () => void;
+}) {
+  const name = job.documents[0]?.filename ?? "Dataset";
+  return (
+    <Link
+      href={`/jobs/${job.id}`}
+      onClick={onNavigate}
+      title={name}
+      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all ${
+        isActive
+          ? "bg-zinc-800/60 text-zinc-100"
+          : "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
+      }`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${jobDotClass(job.status)}`} />
+      <span className='truncate'>{name}</span>
+      {job.document_count > 1 && (
+        <span className='ml-auto shrink-0 font-mono text-xs text-zinc-600'>
+          +{job.document_count - 1}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 export function AppShell({children, token}: AppShellProps) {
   const pathname = usePathname();
   const {data: session} = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {data: jobsData} = useJobs(token ?? "");
-  const recentJobs = (jobsData?.jobs ?? []).slice(0, 10);
+
+  const allJobs = jobsData?.jobs ?? [];
+  const totalJobs = jobsData?.total ?? allJobs.length;
+  const activeJobs = allJobs.filter((j) => !TERMINAL_STATUSES.has(j.status));
+  const doneJobs = allJobs
+    .filter((j) => TERMINAL_STATUSES.has(j.status))
+    .slice(0, MAX_DONE_JOBS);
+  const hasMore = totalJobs > activeJobs.length + doneJobs.length;
 
   const user = session?.user;
   const initials = user?.name
@@ -146,40 +193,54 @@ export function AppShell({children, token}: AppShellProps) {
             ))}
           </div>
 
-          {/* Recent jobs */}
-          {recentJobs.length > 0 && (
-            <div className='mt-6 flex min-h-0 flex-1 flex-col'>
-              <p className='px-3 pb-2 text-xs font-medium uppercase tracking-wider text-zinc-600'>
-                Recent
-              </p>
-              <div className='-mr-1 space-y-0.5 overflow-y-auto pr-1'>
-                {recentJobs.map((job) => {
-                  const name = job.documents[0]?.filename ?? "Dataset";
-                  const isActive = pathname === `/jobs/${job.id}`;
-                  return (
-                    <Link
-                      key={job.id}
-                      href={`/jobs/${job.id}`}
-                      onClick={() => setSidebarOpen(false)}
-                      title={name}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all ${
-                        isActive
-                          ? "bg-zinc-800/60 text-zinc-100"
-                          : "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
-                      }`}>
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${jobDotClass(job.status)}`}
+          {/* Jobs — active first, then recent (done), with a link to the
+              full list on the dashboard when there are more than shown. */}
+          {(activeJobs.length > 0 || doneJobs.length > 0) && (
+            <div className='-mr-1 mt-6 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1'>
+              {activeJobs.length > 0 && (
+                <div>
+                  <p className='px-3 pb-2 text-xs font-medium uppercase tracking-wider text-zinc-600'>
+                    Active
+                  </p>
+                  <div className='space-y-0.5'>
+                    {activeJobs.map((job) => (
+                      <SidebarJobLink
+                        key={job.id}
+                        job={job}
+                        isActive={pathname === `/jobs/${job.id}`}
+                        onNavigate={() => setSidebarOpen(false)}
                       />
-                      <span className='truncate'>{name}</span>
-                      {job.document_count > 1 && (
-                        <span className='ml-auto shrink-0 font-mono text-xs text-zinc-600'>
-                          +{job.document_count - 1}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {doneJobs.length > 0 && (
+                <div>
+                  <p className='px-3 pb-2 text-xs font-medium uppercase tracking-wider text-zinc-600'>
+                    Recent
+                  </p>
+                  <div className='space-y-0.5'>
+                    {doneJobs.map((job) => (
+                      <SidebarJobLink
+                        key={job.id}
+                        job={job}
+                        isActive={pathname === `/jobs/${job.id}`}
+                        onNavigate={() => setSidebarOpen(false)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {hasMore && (
+                <Link
+                  href='/dashboard'
+                  onClick={() => setSidebarOpen(false)}
+                  className='px-3 py-1.5 text-xs font-medium text-zinc-500 transition-colors hover:text-emerald-400'>
+                  View all jobs →
+                </Link>
+              )}
             </div>
           )}
         </nav>
