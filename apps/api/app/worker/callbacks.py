@@ -19,12 +19,10 @@ logger = logging.getLogger(__name__)
 _JOB_ID_ARG_INDEX: dict[str, int] = {
     "app.worker.tasks.ocr.process_document": 0,
     "app.worker.tasks.ocr.ocr_complete": 1,
+    "app.worker.tasks.profile.profile_and_propose": 0,
     "app.worker.tasks.extract.run_extraction": 0,
     "app.worker.tasks.extract.extract_table_chunk": 0,
     "app.worker.tasks.merge.merge_results": 1,
-    # reconcile_and_translate is live until the rebuild_dataset rewrite lands;
-    # both entries coexist so neither pipeline generation can strand a job.
-    "app.worker.tasks.reconcile.reconcile_and_translate": 0,
     "app.worker.tasks.reconcile.rebuild_dataset": 0,
     "app.worker.tasks.translate.translate_and_provision": 0,
     "app.worker.tasks.rag.index_document": 0,

@@ -163,3 +163,35 @@ async def test_resolve_stamps_resolution_into_compat_report(client, no_celery, d
         headers=auth_header("user-a"),
     )
     assert res.status_code == 400
+
+
+async def test_resolve_force_reconciles_and_dispatches_rebuild(client, db_exec, monkeypatch):
+    from app.worker.tasks import ocr as ocr_tasks
+    from app.worker.tasks import reconcile as reconcile_tasks
+
+    monkeypatch.setattr(ocr_tasks.process_document, "apply_async", lambda *a, **k: None)
+    dispatched = []
+    monkeypatch.setattr(
+        reconcile_tasks.rebuild_dataset, "apply_async", lambda *a, **k: dispatched.append((a, k))
+    )
+
+    job = await _complete_job(client, db_exec)
+    doc_id = job["documents"][0]["id"]
+    await db_exec(
+        "UPDATE jobs SET status = 'AWAITING_APPEND_REVIEW' WHERE id = :id", {"id": job["id"]}
+    )
+    await db_exec(
+        'UPDATE documents SET compat_report = \'{"needs_review": true, "reasons": []}\' '
+        "WHERE id = :id",
+        {"id": doc_id},
+    )
+    res = await client.post(
+        f"/api/v1/jobs/{job['id']}/documents/{doc_id}/resolve",
+        json={"action": "force"},
+        headers=auth_header("user-a"),
+    )
+    assert res.status_code == 200
+    assert res.json()["compat_report"]["resolved"] == "force"
+    refreshed = await client.get(f"/api/v1/jobs/{job['id']}", headers=auth_header("user-a"))
+    assert refreshed.json()["status"] == "RECONCILING"
+    assert dispatched == [((), {"args": [job["id"]]})]
