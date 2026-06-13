@@ -9,15 +9,35 @@ import {useState} from "react";
 import Link from "next/link";
 import {usePathname} from "next/navigation";
 import {useSession, signOut} from "next-auth/react";
+import {useJobs} from "@/hooks/use-jobs";
 
 interface AppShellProps {
   children: React.ReactNode;
+  token?: string | null;
 }
 
-export function AppShell({children}: AppShellProps) {
+// Status → sidebar dot. Awaiting-user states are amber, terminal-good emerald,
+// failure red, everything else is in-flight (pulsing emerald).
+const AWAITING_STATUSES = new Set([
+  "MODEL_PROPOSED",
+  "AWAITING_REVIEW",
+  "AWAITING_QUERY",
+  "AWAITING_APPEND_REVIEW",
+]);
+
+function jobDotClass(status: string): string {
+  if (status === "FAILED") return "bg-red-500";
+  if (status === "COMPLETED") return "bg-emerald-500";
+  if (AWAITING_STATUSES.has(status)) return "bg-amber-500";
+  return "bg-emerald-500 animate-pulse";
+}
+
+export function AppShell({children, token}: AppShellProps) {
   const pathname = usePathname();
   const {data: session} = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const {data: jobsData} = useJobs(token ?? "");
+  const recentJobs = (jobsData?.jobs ?? []).slice(0, 10);
 
   const user = session?.user;
   const initials = user?.name
@@ -101,28 +121,67 @@ export function AppShell({children}: AppShellProps) {
         </div>
 
         {/* Navigation */}
-        <nav className='flex-1 space-y-1 px-3 pt-4'>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                item.isActive
-                  ? "bg-zinc-800/60 text-zinc-100"
-                  : "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
-              }`}>
-              <span
-                className={
+        <nav className='flex flex-1 flex-col overflow-hidden px-3 pt-4'>
+          <div className='space-y-1'>
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setSidebarOpen(false)}
+                className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
                   item.isActive
-                    ? "text-emerald-500"
-                    : "text-zinc-600 transition-colors group-hover:text-zinc-400"
-                }>
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          ))}
+                    ? "bg-zinc-800/60 text-zinc-100"
+                    : "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
+                }`}>
+                <span
+                  className={
+                    item.isActive
+                      ? "text-emerald-500"
+                      : "text-zinc-600 transition-colors group-hover:text-zinc-400"
+                  }>
+                  {item.icon}
+                </span>
+                {item.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* Recent jobs */}
+          {recentJobs.length > 0 && (
+            <div className='mt-6 flex min-h-0 flex-1 flex-col'>
+              <p className='px-3 pb-2 text-xs font-medium uppercase tracking-wider text-zinc-600'>
+                Recent
+              </p>
+              <div className='-mr-1 space-y-0.5 overflow-y-auto pr-1'>
+                {recentJobs.map((job) => {
+                  const name = job.documents[0]?.filename ?? "Dataset";
+                  const isActive = pathname === `/jobs/${job.id}`;
+                  return (
+                    <Link
+                      key={job.id}
+                      href={`/jobs/${job.id}`}
+                      onClick={() => setSidebarOpen(false)}
+                      title={name}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all ${
+                        isActive
+                          ? "bg-zinc-800/60 text-zinc-100"
+                          : "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
+                      }`}>
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${jobDotClass(job.status)}`}
+                      />
+                      <span className='truncate'>{name}</span>
+                      {job.document_count > 1 && (
+                        <span className='ml-auto shrink-0 font-mono text-xs text-zinc-600'>
+                          +{job.document_count - 1}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* User section */}

@@ -76,7 +76,7 @@ export function NewJobClient({token}: NewJobClientProps) {
   };
 
   return (
-    <AppShell>
+    <AppShell token={token}>
       <div className='px-6 py-8 lg:px-10'>
         {/* Breadcrumb */}
         <div className='flex items-center gap-2 text-sm'>

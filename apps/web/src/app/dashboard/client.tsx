@@ -75,7 +75,7 @@ export function DashboardClient({ token }: DashboardClientProps) {
   }, [jobs]);
 
   return (
-    <AppShell>
+    <AppShell token={token}>
       <div className="px-6 py-8 lg:px-10">
         {/* Page header */}
         <div className="flex items-center justify-between">

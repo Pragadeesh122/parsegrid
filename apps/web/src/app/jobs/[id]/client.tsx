@@ -175,7 +175,7 @@ export default function JobDetailClient({
 
   if (loading) {
     return (
-      <AppShell>
+      <AppShell token={token}>
         <div className='flex min-h-[60vh] items-center justify-center'>
           <div className='h-5 w-5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent' />
         </div>
@@ -185,7 +185,7 @@ export default function JobDetailClient({
 
   if (error || !job) {
     return (
-      <AppShell>
+      <AppShell token={token}>
         <div className='px-6 py-12 lg:px-10'>
           <div className='mx-auto max-w-md text-center space-y-4'>
             <p className='text-red-400'>{error || "Job not found"}</p>
@@ -203,7 +203,7 @@ export default function JobDetailClient({
   const datasetName = job.documents[0]?.filename ?? "Dataset";
 
   return (
-    <AppShell>
+    <AppShell token={token}>
       <div className='px-6 py-8 lg:px-10'>
         {/* Breadcrumb */}
         <div className='flex items-center gap-2 text-sm'>
