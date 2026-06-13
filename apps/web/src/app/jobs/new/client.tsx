@@ -68,6 +68,11 @@ export function NewJobClient({token}: NewJobClientProps) {
       });
       if (!jobRes.ok) throw new Error("Job creation failed");
       const job = await jobRes.json();
+      // Reset the form before navigating — Next's client router cache can
+      // restore this page (and its React state) when the user returns via
+      // "New Job", so the selected file / submitting state must not linger.
+      setSelectedFiles([]);
+      setIsUploading(false);
       router.push(`/jobs/${job.id}`);
     } catch (e) {
       setError((e as Error).message);
